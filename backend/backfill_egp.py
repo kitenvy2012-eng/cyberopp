@@ -155,8 +155,13 @@ async def run_backfill(
                 continue
             if index % 200 == 0:
                 db.commit()
+                # Without this the identity map keeps every tender and its
+                # provenance alive for the whole run, which is what exhausts a
+                # small instance part-way through a large sweep.
+                db.expunge_all()
                 logger.info("Persisted %s/%s records...", index, len(result))
         db.commit()
+        db.expunge_all()
 
         source.last_scanned_at = observed_at
         source.last_status = outcome.status.value

@@ -55,7 +55,12 @@ async def _backfill_empty_database() -> None:
     logger.info("Database is empty; starting first-run e-GP backfill in the background...")
     db = SessionLocal()
     try:
-        await run_backfill(db, years_back=settings.BACKFILL_YEARS_BACK)
+        await run_backfill(
+            db,
+            years_back=settings.BACKFILL_YEARS_BACK,
+            enrich_details=settings.BACKFILL_ENRICH_DETAILS,
+            concurrency=3,
+        )
         logger.info("First-run backfill finished.")
     except asyncio.CancelledError:
         logger.info("First-run backfill cancelled by shutdown.")

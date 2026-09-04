@@ -18,6 +18,11 @@ services:
         value: sqlite:////data/cyber_opp.db
       - key: BACKFILL_ON_EMPTY
         value: "true"
+      # Keep the unattended first run small. A 12-year sweep is killed part-way
+      # on a free instance, and with no disk that restarts it from nothing in a
+      # loop. Raise this only on a plan with a disk.
+      - key: BACKFILL_YEARS_BACK
+        value: "2"
       - key: SCAN_INTERVAL_MINUTES
         value: "180"
       # Not needed while the dashboard proxies /api through Netlify. Set it to

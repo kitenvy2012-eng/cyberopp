@@ -22,7 +22,17 @@ class Settings:
     BACKFILL_ON_EMPTY: bool = os.getenv(
         "BACKFILL_ON_EMPTY", "false"
     ).strip().lower() in {"1", "true", "yes", "on"}
-    BACKFILL_YEARS_BACK: int = int(os.getenv("BACKFILL_YEARS_BACK", "12"))
+    # Deliberately small. A first-run sweep competes with the web worker for
+    # CPU and memory, and on a modest instance a 12-year sweep is killed
+    # part-way — which, with no disk, restarts it from nothing in a loop. Two
+    # years fills the dashboard in well under a minute; run
+    # `backend/backfill_egp.py` for the full history once it is up.
+    BACKFILL_YEARS_BACK: int = int(os.getenv("BACKFILL_YEARS_BACK", "2"))
+    # Contract/winner lookups add one request per record. Off for the
+    # unattended first run; the scheduled scan enriches later.
+    BACKFILL_ENRICH_DETAILS: bool = os.getenv(
+        "BACKFILL_ENRICH_DETAILS", "false"
+    ).strip().lower() in {"1", "true", "yes", "on"}
     DEFAULT_RETRIES: int = 3
     DEFAULT_TIMEOUT: int = 15
 
