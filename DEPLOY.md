@@ -25,8 +25,19 @@ Netlify รันได้แค่ static file กับ JS/Go function — ร
 ### Render (มี `render.yaml` ให้แล้ว)
 
 1. <https://dashboard.render.com/blueprints> → **New Blueprint Instance** → เลือก repo นี้
-2. Render อ่าน `render.yaml` เอง แล้วสร้าง service พร้อม disk 5 GB ที่ `/data`
+2. Render อ่าน `render.yaml` เอง — ตั้งเป็น **plan free** ไว้ จึงไม่มีค่าใช้จ่าย
 3. รอจน health check ที่ `/api/health` เขียว แล้วจดโดเมนไว้ เช่น `https://cyberwatch-api.onrender.com`
+
+**free plan แลกกับอะไร**
+
+| | free | starter (เสียเงิน) |
+|---|---|---|
+| instance หลับหลังไม่มี traffic ~15 นาที | ใช่ — ไม่สแกนตามรอบตอนหลับ | ไม่หลับ |
+| disk เก็บข้อมูลถาวร | ไม่มี | มี (เพิ่ม `disk:` ใน `render.yaml`) |
+| ข้อมูลที่ scrape มา | หายตอน restart แต่ `BACKFILL_ON_EMPTY` ดึงกลับเองใน ~1 นาที | อยู่ถาวร |
+| bookmark / pipeline / โน้ตที่พิมพ์เอง | **หายถาวร** | อยู่ถาวร |
+
+ถ้าใช้แค่ดูข้อมูล free พอ ถ้าจะใช้จริงกับทีมขาย (ต้องบันทึก pipeline) ต้องขึ้น starter — ดูราคาปัจจุบันที่ <https://render.com/pricing> ก่อนตัดสินใจ
 
 ### ทางเลือกอื่น
 

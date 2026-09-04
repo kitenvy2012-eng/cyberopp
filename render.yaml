@@ -1,28 +1,25 @@
 # One-click backend deploy on Render (Blueprint). Import the repository at
 # https://dashboard.render.com/blueprints and Render reads this file.
 #
-# The disk is the important part: without it the SQLite database lives inside
-# the container and every redeploy throws away the scan history.
+# Defaults to the free plan so importing this costs nothing. See the note at
+# the bottom for what that trades away and how to make the data durable.
 services:
   - type: web
     name: cyberwatch-api
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter          # A free instance sleeps when idle, which stops the scanner.
+    plan: free
     healthCheckPath: /api/health
-    disk:
-      name: cyberwatch-data
-      mountPath: /data
-      sizeGB: 5
     envVars:
+      # No disk on the free plan, so the database lives in the container and is
+      # discarded whenever it restarts. BACKFILL_ON_EMPTY below rebuilds it from
+      # the official e-GP history on the next boot, which takes about a minute.
       - key: DATABASE_URL
         value: sqlite:////data/cyber_opp.db
-      - key: SCAN_INTERVAL_MINUTES
-        value: "180"
-      # Fills the empty volume from the official e-GP history on first boot,
-      # in the background, so a fresh deploy is not an empty dashboard.
       - key: BACKFILL_ON_EMPTY
         value: "true"
+      - key: SCAN_INTERVAL_MINUTES
+        value: "180"
       # Not needed while the dashboard proxies /api through Netlify. Set it to
       # the Netlify origin only if the frontend calls this API directly.
       - key: CORS_ORIGINS
@@ -30,3 +27,23 @@ services:
       # Optional key from https://opend.data.go.th/register_api
       - key: DATA_GO_TH_API_KEY
         sync: false
+
+# ---------------------------------------------------------------------------
+# What the free plan costs you
+#
+#   * The instance sleeps after ~15 minutes idle. A sleeping instance runs no
+#     scheduled scans, and the first request after it wakes is slow.
+#   * There is no disk, so bookmarks, pipeline stages and notes you enter in
+#     the dashboard are lost on every restart. Scraped records come back by
+#     themselves; anything you typed does not.
+#
+# To keep data: switch `plan: free` to `plan: starter` (paid) and add
+#
+#     disk:
+#       name: cyberwatch-data
+#       mountPath: /data
+#       sizeGB: 5
+#
+# Check current pricing at https://render.com/pricing before switching — a
+# paid plan bills your account.
+# ---------------------------------------------------------------------------
