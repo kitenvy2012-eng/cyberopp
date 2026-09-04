@@ -1,5 +1,18 @@
 # Deploy: Netlify (dashboard) + container host (backend)
 
+## ที่ deploy ไว้แล้ว
+
+| | URL |
+|---|---|
+| Dashboard (Netlify) | <https://preeminent-gecko-16eceb.netlify.app> |
+| Backend (Render, free) | <https://cyberwatch-api-r6p8.onrender.com> |
+| Repo | <https://github.com/kitenvy2012-eng/cyberopp> |
+
+Netlify ใช้ **Drop (อัปโหลด zip)** ไม่ได้ต่อ Git จึงไม่มี auto-deploy — อัปเดตหน้าเว็บด้วยการ build แล้วอัปโหลดใหม่ (วิธี B ด้านล่าง) Render ดึงจาก public repo URL เช่นกัน ต้องกด **Manual Deploy → Deploy latest commit** หลัง push
+
+ถ้าต้องการ auto-deploy ทั้งสองที่ ต้องกด authorize ให้ Netlify/Render เข้าถึง GitHub เอง (ผมไม่กดให้ เพราะเป็นการให้สิทธิ์แอปภายนอกเข้าบัญชีคุณ)
+
+
 Netlify รันได้แค่ static file กับ JS/Go function — รัน FastAPI, เขียน SQLite หรือรัน background scheduler **ไม่ได้** สถาปัตยกรรมที่ใช้จึงเป็น:
 
 ```
@@ -145,6 +158,8 @@ VITE_API_BASE=https://your-backend-host.example.com/api npm run build
 ## ข้อจำกัดที่ต้องรู้ก่อน deploy
 
 - **instance ที่หลับได้จะไม่สแกน** — free tier ของ Render/Railway จะ spin down เมื่อไม่มี traffic ทำให้ APScheduler หยุด ถ้าต้องการสแกนตามรอบจริงต้องใช้ instance ที่ไม่หลับ หรือย้ายไปใช้ cron ของ host ยิง `POST /api/scan`
+- **free tier ตื่นช้ากว่าที่ proxy รอไหว** — Render cold start ใช้ 50+ วินาที ส่วน proxy ของ Netlify ยอมรอสั้นกว่านั้น เปิดเว็บครั้งแรกหลังหลับจึงเจอ 502 กด refresh อีกครั้งจะติด นี่เป็นอาการของ free plan ล้วน ๆ แก้ได้ด้วยการขึ้น plan ที่ไม่หลับ
+- **first-run backfill ต้องเล็กพอกับเครื่อง** — เคยตั้ง 12 ปีแล้ว process ถูกฆ่ากลางคันตอนบันทึกรายการที่ 2,600 จาก 6,830 และเพราะ free plan ไม่มี disk การ restart จึงเจอฐานว่างแล้วเริ่มใหม่ วนไม่จบ ค่าเริ่มต้นตอนนี้คือ 2 ปี ปิด enrichment ซึ่งจบใน ~45 วินาที ถ้าจะเอาครบ 12 ปีให้รัน `backend/backfill_egp.py` ตอน service ขึ้นแล้ว และควรมี disk
 - **ใช้ worker เดียวเท่านั้น** — `Dockerfile` ตั้ง `--workers 1` ไว้ เพราะตัวล็อกกันสแกนซ้อน (`_SCAN_LOCK`) อยู่ในหน่วยความจำของ process และ SQLite ไม่ชอบการเขียนพร้อมกันหลาย process
 - **ยังไม่รองรับ Postgres** — `DATABASE_URL` รับค่าอื่นได้ แต่ migration ยังใช้ไวยากรณ์แบบ SQLite (เช่นเทียบ `is_demo = 1`) ถ้าจะย้ายไป Postgres ต้องแก้ `backend/app/core/database.py` ก่อน
 - **API ไม่มีระบบยืนยันตัวตน** — ใครที่รู้ URL ก็ยิง `POST /api/scan` หรือแก้ pipeline ได้ ถ้าเปิดสาธารณะควรใส่ auth หรือจำกัด IP ที่ชั้น host ก่อน
