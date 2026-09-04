@@ -1,0 +1,32 @@
+# One-click backend deploy on Render (Blueprint). Import the repository at
+# https://dashboard.render.com/blueprints and Render reads this file.
+#
+# The disk is the important part: without it the SQLite database lives inside
+# the container and every redeploy throws away the scan history.
+services:
+  - type: web
+    name: cyberwatch-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # A free instance sleeps when idle, which stops the scanner.
+    healthCheckPath: /api/health
+    disk:
+      name: cyberwatch-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////data/cyber_opp.db
+      - key: SCAN_INTERVAL_MINUTES
+        value: "180"
+      # Fills the empty volume from the official e-GP history on first boot,
+      # in the background, so a fresh deploy is not an empty dashboard.
+      - key: BACKFILL_ON_EMPTY
+        value: "true"
+      # Not needed while the dashboard proxies /api through Netlify. Set it to
+      # the Netlify origin only if the frontend calls this API directly.
+      - key: CORS_ORIGINS
+        sync: false
+      # Optional key from https://opend.data.go.th/register_api
+      - key: DATA_GO_TH_API_KEY
+        sync: false

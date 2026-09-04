@@ -1,0 +1,29 @@
+# Databases. cyber_opp.db is 108 MB — over GitHub's 100 MB per-file limit — and
+# it is rebuildable from the sources by `backend/backfill_egp.py`, so it is
+# never committed. Deployments keep it on a mounted volume instead.
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Dependencies
+backend/venv/
+node_modules/
+**/__pycache__/
+*.py[cod]
+
+# Build output
+frontend/dist/
+# Generated at build time from API_PROXY_TARGET; see DEPLOY.md
+frontend/public/_redirects
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

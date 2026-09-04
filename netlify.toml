@@ -1,0 +1,35 @@
+# Netlify hosts the dashboard only. The FastAPI backend runs elsewhere and is
+# reached through the /api proxy that `scripts/write-redirects.mjs` generates
+# from the API_PROXY_TARGET environment variable at build time.
+#
+# Required environment variable (Site configuration -> Environment variables):
+#   API_PROXY_TARGET = https://your-backend-host.example.com
+#
+# The build fails loudly if it is missing, rather than publishing a dashboard
+# whose every request 404s.
+
+[build]
+  base = "frontend"
+  command = "npm run build:netlify"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Hashed asset filenames are safe to cache forever; index.html must not be.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
