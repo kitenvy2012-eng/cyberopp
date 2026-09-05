@@ -18,6 +18,7 @@ from backend.app.scrapers.manager import (
 from backend.app.api.tenders import router as tenders_router
 from backend.app.api.stats import router as stats_router
 from backend.app.api.sources import router as sources_router
+from backend.app.api.buyers import router as buyers_router
 from backend.app.api.notifications import router as notifications_router
 from backend.app.api.scan import router as scan_router
 
@@ -109,6 +110,7 @@ def health_check():
 app.include_router(tenders_router, prefix=settings.API_V1_STR)
 app.include_router(stats_router, prefix=settings.API_V1_STR)
 app.include_router(sources_router, prefix=settings.API_V1_STR)
+app.include_router(buyers_router, prefix=settings.API_V1_STR)
 app.include_router(notifications_router, prefix=settings.API_V1_STR)
 app.include_router(scan_router, prefix=settings.API_V1_STR)
 

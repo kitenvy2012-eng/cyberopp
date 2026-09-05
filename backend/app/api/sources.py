@@ -1,14 +1,16 @@
 import asyncio
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
 
 from backend.app.core.database import get_db
-from backend.app.models.models import ScraperSource, Tender
+from backend.app.models.models import Buyer, ScraperSource, Source, Tender
 from backend.app.models.schemas import (
     ScraperSourceResponse,
     ScraperSourceCreate,
+    SourceResponse,
+    SourceCreate,
     SourceTestRequest,
     SourceTestResponse,
     SourceTestSampleItem,
@@ -93,8 +95,23 @@ async def test_source(req: SourceTestRequest):
     )
 
 @router.get("", response_model=List[ScraperSourceResponse])
-def get_sources(db: Session = Depends(get_db)):
-    sources = db.query(ScraperSource).all()
+def get_sources(
+    buyer_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    source_names = None
+    if buyer_id is not None:
+        source_names = [
+            s.name for s in db.query(Source).filter(Source.buyer_id == buyer_id).all()
+        ]
+        if not source_names:
+            return []
+
+    query = db.query(ScraperSource)
+    if source_names is not None:
+        query = query.filter(ScraperSource.name.in_(source_names))
+    sources = query.all()
+
     # Count only records that can appear in the normal trusted view.
     for s in sources:
         s.tenders_count = db.query(Tender).filter(
@@ -104,6 +121,33 @@ def get_sources(db: Session = Depends(get_db)):
         ).count()
     return sources
 
+
+@router.get("/registry", response_model=List[SourceResponse])
+def get_registry_sources(
+    buyer_id: Optional[int] = None,
+    health_status: Optional[str] = None,
+    active_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    """List sources from the new Buyer-Centric Source Registry."""
+    query = db.query(Source)
+    if buyer_id is not None:
+        query = query.filter(Source.buyer_id == buyer_id)
+    if health_status and health_status != "ALL":
+        query = query.filter(Source.health_status == health_status.upper())
+    if active_only:
+        query = query.filter(Source.is_active.is_(True))
+
+    sources = query.all()
+    results = []
+    for s in sources:
+        resp = SourceResponse.model_validate(s)
+        if s.buyer:
+            resp.buyer_name = s.buyer.name
+        results.append(resp)
+    return results
+
+
 @router.post("", response_model=ScraperSourceResponse)
 def create_source(data: ScraperSourceCreate, db: Session = Depends(get_db)):
     try:
@@ -112,9 +156,28 @@ def create_source(data: ScraperSourceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     source = ScraperSource(**data.model_dump(exclude={"url"}), url=safe_url)
     db.add(source)
+
+    # Synchronize with new Source table
+    new_src = db.query(Source).filter(Source.name == data.name).first()
+    if not new_src:
+        adapter = "API" if data.source_type == "EGP" else ("CUSTOM" if data.source_type == "CUSTOM_WEB" else "STATIC_HTML")
+        db.add(
+            Source(
+                name=data.name,
+                source_type="PROCUREMENT_PAGE" if data.source_type != "EGP" else "PLATFORM",
+                url=safe_url,
+                adapter_type=adapter,
+                configuration_json=data.config_json,
+                is_official=True,
+                is_active=data.is_active,
+                health_status="HEALTHY" if data.is_active else "DISABLED",
+            )
+        )
+
     db.commit()
     db.refresh(source)
     return source
+
 
 @router.patch("/{source_id}/toggle", response_model=ScraperSourceResponse)
 def toggle_source(source_id: int, db: Session = Depends(get_db)):
@@ -126,15 +189,28 @@ def toggle_source(source_id: int, db: Session = Depends(get_db)):
     # deliberate override. Clearing the marker stops startup from reverting it.
     if source.is_active and str(source.last_status or "").startswith("DISABLED_"):
         source.last_status = "IDLE"
+
+    # Synchronize toggle with new Source table
+    new_src = db.query(Source).filter(Source.name == source.name).first()
+    if new_src:
+        new_src.is_active = source.is_active
+        new_src.health_status = "HEALTHY" if source.is_active else "DISABLED"
+
     db.commit()
     db.refresh(source)
     return source
+
 
 @router.delete("/{source_id}")
 def delete_source(source_id: int, db: Session = Depends(get_db)):
     source = db.query(ScraperSource).filter(ScraperSource.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="ไม่พบแหล่งข้อมูลนี้")
+
+    new_src = db.query(Source).filter(Source.name == source.name).first()
+    if new_src:
+        db.delete(new_src)
+
     db.delete(source)
     db.commit()
     return {"message": "ลบแหล่งข้อมูลสำเร็จ"}

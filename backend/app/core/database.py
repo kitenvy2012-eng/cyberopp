@@ -150,6 +150,64 @@ def run_database_migrations() -> None:
                 url_params,
             )
 
+        # Buyer & Source Registry tables and indexes
+        is_postgres = "postgresql" in settings.DATABASE_URL
+        pk_type = "SERIAL PRIMARY KEY" if is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        connection.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS buyers (
+                id {pk_type},
+                name VARCHAR(255) NOT NULL,
+                name_th VARCHAR(255),
+                name_en VARCHAR(255),
+                domain VARCHAR(255),
+                industry VARCHAR(100) NOT NULL,
+                company_type VARCHAR(50) NOT NULL DEFAULT 'PRIVATE',
+                country VARCHAR(10) DEFAULT 'TH',
+                priority VARCHAR(20) DEFAULT 'TIER_2',
+                active BOOLEAN DEFAULT 1,
+                procurement_coverage_status VARCHAR(50) DEFAULT 'UNKNOWN',
+                latest_procurement_date VARCHAR(50),
+                latest_cyber_opportunity_date VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        connection.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS sources (
+                id {pk_type},
+                buyer_id INTEGER REFERENCES buyers(id) ON DELETE SET NULL,
+                name VARCHAR(255) NOT NULL,
+                source_type VARCHAR(50) NOT NULL,
+                url VARCHAR(2000) NOT NULL,
+                adapter_type VARCHAR(50) NOT NULL DEFAULT 'STATIC_HTML',
+                configuration_json TEXT,
+                is_official BOOLEAN DEFAULT 1,
+                requires_browser BOOLEAN DEFAULT 0,
+                requires_authentication BOOLEAN DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                source_confidence VARCHAR(50) DEFAULT 'A_OFFICIAL',
+                health_status VARCHAR(50) DEFAULT 'HEALTHY',
+                last_checked_at TIMESTAMP,
+                last_success_at TIMESTAMP,
+                last_content_change_at TIMESTAMP,
+                latest_post_date VARCHAR(50),
+                consecutive_failures INTEGER DEFAULT 0,
+                tenders_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        for index_sql in (
+            "CREATE INDEX IF NOT EXISTS ix_buyers_priority ON buyers (priority)",
+            "CREATE INDEX IF NOT EXISTS ix_buyers_industry ON buyers (industry)",
+            "CREATE INDEX IF NOT EXISTS ix_buyers_domain ON buyers (domain)",
+            "CREATE INDEX IF NOT EXISTS ix_sources_buyer_id ON sources (buyer_id)",
+            "CREATE INDEX IF NOT EXISTS ix_sources_health_status ON sources (health_status)",
+        ):
+            connection.execute(text(index_sql))
+
 
 def get_db():
     db = SessionLocal()

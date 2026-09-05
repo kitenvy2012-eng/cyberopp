@@ -12,12 +12,14 @@ from typing import Any, Dict, Iterable, List, Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from backend.app.data.seed_data import DEFAULT_CHANNELS, DEFAULT_SOURCES
+from backend.app.data.seed_data import DEFAULT_CHANNELS, DEFAULT_SOURCES, INITIAL_BUYERS
 from backend.app.models.models import (
+    Buyer,
     NotificationChannel,
     NotificationLog,
     ScanLog,
     ScraperSource,
+    Source,
     Tender,
     TenderProvenance,
 )
@@ -67,37 +69,104 @@ _SCAN_LOCK = asyncio.Lock()
 
 
 def seed_database_if_empty(db: Session) -> None:
-    """Synchronize the live source catalogue and notification channels."""
+    """Synchronize the live source catalogue, buyer registry, and notification channels."""
+    # 1. Synchronize Buyer registry from INITIAL_BUYERS
+    for b_data in INITIAL_BUYERS:
+        existing_buyer = (
+            db.query(Buyer)
+            .filter(
+                or_(
+                    Buyer.name == b_data["name"],
+                    Buyer.domain == b_data.get("domain") if b_data.get("domain") else False,
+                )
+            )
+            .first()
+        )
+        if not existing_buyer:
+            db.add(Buyer(**b_data))
+        else:
+            if not existing_buyer.name_th and b_data.get("name_th"):
+                existing_buyer.name_th = b_data["name_th"]
+            if not existing_buyer.name_en and b_data.get("name_en"):
+                existing_buyer.name_en = b_data["name_en"]
+            if not existing_buyer.domain and b_data.get("domain"):
+                existing_buyer.domain = b_data["domain"]
+            if b_data.get("industry"):
+                existing_buyer.industry = b_data["industry"]
+            if b_data.get("company_type"):
+                existing_buyer.company_type = b_data["company_type"]
+            if b_data.get("priority"):
+                existing_buyer.priority = b_data["priority"]
+            if b_data.get("procurement_coverage_status") and existing_buyer.procurement_coverage_status == "UNKNOWN":
+                existing_buyer.procurement_coverage_status = b_data["procurement_coverage_status"]
+    db.commit()
+
+    # 2. Synchronize sources (both ScraperSource and Source)
+    legacy_keys = {"name", "source_type", "url", "is_active", "config_json", "last_status"}
     for src_data in DEFAULT_SOURCES:
+        legacy_data = {k: v for k, v in src_data.items() if k in legacy_keys}
         existing_src = (
             db.query(ScraperSource)
             .filter(ScraperSource.name == src_data["name"])
             .first()
         )
         if not existing_src:
-            db.add(ScraperSource(**src_data))
-            continue
+            db.add(ScraperSource(**legacy_data))
+        else:
+            # URL/parser fixes are application metadata and always applied.
+            existing_src.source_type = src_data["source_type"]
+            existing_src.url = src_data["url"]
+            existing_src.config_json = src_data.get("config_json")
+            # A source the catalogue ships as disabled is one we established cannot
+            # be fetched lawfully or parsed at all. Turn it off once, and record the
+            # reason, rather than letting it report a permanent failure. Turning it
+            # back on by hand clears the marker, and this never overrides that.
+            default_status = src_data.get("last_status")
+            if src_data.get("is_active") is False and default_status:
+                if existing_src.last_scanned_at is None or (
+                    existing_src.last_status in _AUTO_DISABLED_STATUSES
+                ):
+                    existing_src.is_active = False
+                    existing_src.last_status = default_status
+            elif src_data.get("is_active") and existing_src.last_status in _AUTO_DISABLED_STATUSES:
+                # The catalogue now has a working URL/parser for a source that had
+                # been switched off automatically before.
+                existing_src.is_active = True
+                existing_src.last_status = "IDLE"
 
-        # URL/parser fixes are application metadata and always applied.
-        existing_src.source_type = src_data["source_type"]
-        existing_src.url = src_data["url"]
-        existing_src.config_json = src_data.get("config_json")
-        # A source the catalogue ships as disabled is one we established cannot
-        # be fetched lawfully or parsed at all. Turn it off once, and record the
-        # reason, rather than letting it report a permanent failure. Turning it
-        # back on by hand clears the marker, and this never overrides that.
-        default_status = src_data.get("last_status")
-        if src_data.get("is_active") is False and default_status:
-            if existing_src.last_scanned_at is None or (
-                existing_src.last_status in _AUTO_DISABLED_STATUSES
-            ):
-                existing_src.is_active = False
-                existing_src.last_status = default_status
-        elif src_data.get("is_active") and existing_src.last_status in _AUTO_DISABLED_STATUSES:
-            # The catalogue now has a working URL/parser for a source that had
-            # been switched off automatically before.
-            existing_src.is_active = True
-            existing_src.last_status = "IDLE"
+        # 3. Synchronize new Source registry
+        buyer = None
+        if src_data.get("buyer_domain"):
+            buyer = db.query(Buyer).filter(Buyer.domain == src_data["buyer_domain"]).first()
+
+        existing_new_src = db.query(Source).filter(Source.name == src_data["name"]).first()
+        adapter = "API" if src_data["source_type"] == "EGP" else ("CUSTOM" if src_data["source_type"] == "CUSTOM_WEB" else "STATIC_HTML")
+        source_type_enum = "PLATFORM" if src_data["source_type"] == "EGP" else "PROCUREMENT_PAGE"
+        health = "DISABLED" if not src_data.get("is_active", True) else ("FAILED" if src_data.get("last_status") == "FAILED" else "HEALTHY")
+
+        if not existing_new_src:
+            db.add(
+                Source(
+                    buyer_id=buyer.id if buyer else None,
+                    name=src_data["name"],
+                    source_type=source_type_enum,
+                    url=src_data["url"],
+                    adapter_type=adapter,
+                    configuration_json=src_data.get("config_json"),
+                    is_official=True,
+                    is_active=src_data.get("is_active", True),
+                    health_status=health,
+                )
+            )
+        else:
+            if buyer and existing_new_src.buyer_id != buyer.id:
+                existing_new_src.buyer_id = buyer.id
+            existing_new_src.url = src_data["url"]
+            existing_new_src.adapter_type = adapter
+            existing_new_src.configuration_json = src_data.get("config_json")
+            if not src_data.get("is_active", True):
+                existing_new_src.is_active = False
+                existing_new_src.health_status = "DISABLED"
     db.commit()
 
     # Quarantine false positives created by older generic sitemap traversal.

@@ -161,3 +161,69 @@ class ScanLog(Base):
     new_found = Column(Integer, default=0)
     status = Column(String(50), default="RUNNING") # RUNNING, COMPLETED, FAILED
     details = Column(Text, nullable=True)
+
+
+class Buyer(Base):
+    __tablename__ = "buyers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    name_th = Column(String(255), nullable=True)
+    name_en = Column(String(255), nullable=True)
+    domain = Column(String(255), nullable=True, index=True)
+    industry = Column(String(100), nullable=False, index=True) # TELECOM, BANKING, ENERGY, RETAIL, HEALTHCARE, TECH, GOV, etc.
+    company_type = Column(String(50), nullable=False, default="PRIVATE") # PRIVATE, PUBLIC, STATE_ENTERPRISE, GOVERNMENT, UNIVERSITY, OTHER
+    country = Column(String(10), default="TH")
+    priority = Column(String(20), default="TIER_2", index=True) # TIER_1, TIER_2, TIER_3
+    active = Column(Boolean, default=True)
+
+    procurement_coverage_status = Column(String(50), default="UNKNOWN") # HIGH, MEDIUM, LOW, UNKNOWN
+    latest_procurement_date = Column(String(50), nullable=True)
+    latest_cyber_opportunity_date = Column(String(50), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sources = relationship(
+        "Source",
+        back_populates="buyer",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class Source(Base):
+    __tablename__ = "sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    buyer_id = Column(Integer, ForeignKey("buyers.id", ondelete="SET NULL"), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    # PROCUREMENT_PAGE, TENDER_PAGE, SUPPLIER_PORTAL, VENDOR_PORTAL, RSS, SITEMAP, SEARCH_DISCOVERY, MANUAL, OTHER
+    source_type = Column(String(50), nullable=False)
+    url = Column(String(2000), nullable=False)
+    # STATIC_HTML, RSS, XML, SITEMAP, BROWSER, PDF, SEARCH, CUSTOM
+    adapter_type = Column(String(50), nullable=False, default="STATIC_HTML")
+    configuration_json = Column(Text, nullable=True)
+
+    is_official = Column(Boolean, default=True)
+    requires_browser = Column(Boolean, default=False)
+    requires_authentication = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+
+    # A_OFFICIAL, B_PLATFORM, C_DISCOVERED, D_SIGNAL
+    source_confidence = Column(String(50), default="A_OFFICIAL")
+    # HEALTHY, WARNING, FAILED, DISABLED, STALE_SOURCE
+    health_status = Column(String(50), default="HEALTHY", index=True)
+
+    last_checked_at = Column(DateTime, nullable=True)
+    last_success_at = Column(DateTime, nullable=True)
+    last_content_change_at = Column(DateTime, nullable=True)
+    latest_post_date = Column(String(50), nullable=True)
+    consecutive_failures = Column(Integer, default=0)
+    tenders_count = Column(Integer, default=0)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    buyer = relationship("Buyer", back_populates="sources")
+

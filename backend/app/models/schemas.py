@@ -198,3 +198,119 @@ class StatsResponse(BaseModel):
     category_counts: dict
     agency_type_counts: dict
     latest_scan: Optional[ScanLogResponse] = None
+
+
+# ===========================================================================
+# Buyer & Source Registry Schemas (Cyber Opportunity Radar)
+# ===========================================================================
+
+class SourceBase(BaseModel):
+    buyer_id: Optional[int] = None
+    name: str
+    source_type: str
+    url: str
+    adapter_type: str = "STATIC_HTML"
+    configuration_json: Optional[str] = None
+    is_official: bool = True
+    requires_browser: bool = False
+    requires_authentication: bool = False
+    is_active: bool = True
+    source_confidence: str = "A_OFFICIAL"
+    health_status: str = "HEALTHY"
+
+
+class SourceCreate(SourceBase):
+    pass
+
+
+class SourceUpdate(BaseModel):
+    buyer_id: Optional[int] = None
+    name: Optional[str] = None
+    source_type: Optional[str] = None
+    url: Optional[str] = None
+    adapter_type: Optional[str] = None
+    configuration_json: Optional[str] = None
+    is_official: Optional[bool] = None
+    requires_browser: Optional[bool] = None
+    requires_authentication: Optional[bool] = None
+    is_active: Optional[bool] = None
+    source_confidence: Optional[str] = None
+    health_status: Optional[str] = None
+
+
+class SourceResponse(SourceBase):
+    id: int
+    last_checked_at: Optional[datetime] = None
+    last_success_at: Optional[datetime] = None
+    last_content_change_at: Optional[datetime] = None
+    latest_post_date: Optional[str] = None
+    consecutive_failures: int = 0
+    tenders_count: int = 0
+    buyer_name: Optional[str] = None
+    last_status: Optional[str] = "IDLE"
+    config_json: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BuyerBase(BaseModel):
+    name: str
+    name_th: Optional[str] = None
+    name_en: Optional[str] = None
+    domain: Optional[str] = None
+    industry: str
+    company_type: str = "PRIVATE"
+    country: str = "TH"
+    priority: str = "TIER_2"
+    active: bool = True
+    procurement_coverage_status: str = "UNKNOWN"
+    latest_procurement_date: Optional[str] = None
+    latest_cyber_opportunity_date: Optional[str] = None
+
+
+class BuyerCreate(BuyerBase):
+    pass
+
+
+class BuyerUpdate(BaseModel):
+    name: Optional[str] = None
+    name_th: Optional[str] = None
+    name_en: Optional[str] = None
+    domain: Optional[str] = None
+    industry: Optional[str] = None
+    company_type: Optional[str] = None
+    country: Optional[str] = None
+    priority: Optional[str] = None
+    active: Optional[bool] = None
+    procurement_coverage_status: Optional[str] = None
+
+
+class BuyerResponse(BuyerBase):
+    id: int
+    sources_count: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BuyerDetailResponse(BuyerResponse):
+    sources: List[SourceResponse] = Field(default_factory=list)
+
+
+class BuyerActivityResponse(BaseModel):
+    buyer_id: int
+    buyer_name: str
+    latest_procurement_date: Optional[str] = None
+    latest_cyber_opportunity_date: Optional[str] = None
+    procurement_count_30d: int = 0
+    procurement_count_90d: int = 0
+    cyber_count_90d: int = 0
+    source_health: str = "HEALTHY"
+    coverage_score: str = "UNKNOWN"
+    sources: List[SourceResponse] = Field(default_factory=list)
+
