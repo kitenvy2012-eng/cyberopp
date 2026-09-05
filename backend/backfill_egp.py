@@ -104,6 +104,8 @@ async def run_backfill(
                 "source catalogue is created, then re-run this script."
             )
             return 1
+        source_id = source.id
+        scan_log_id = scan_log.id
 
         config = json.dumps(
             {
@@ -157,11 +159,15 @@ async def run_backfill(
                 db.commit()
                 # Without this the identity map keeps every tender and its
                 # provenance alive for the whole run, which is what exhausts a
-                # small instance part-way through a large sweep.
+                # small instance part-way through a large sweep. It also detaches
+                # the source row, which the next iteration still needs, so the
+                # source is re-attached immediately.
                 db.expunge_all()
+                source = db.get(ScraperSource, source_id)
                 logger.info("Persisted %s/%s records...", index, len(result))
         db.commit()
         db.expunge_all()
+        source = db.get(ScraperSource, source_id)
 
         source.last_scanned_at = observed_at
         source.last_status = outcome.status.value
@@ -178,7 +184,7 @@ async def run_backfill(
             f"Backfill {years_back} budget years: found {len(result)}; "
             f"new {created}; updated {updated}; skipped {skipped}"
         )
-        scan_log = db.query(ScanLog).filter(ScanLog.id == scan_log.id).first()
+        scan_log = db.get(ScanLog, scan_log_id)
         scan_log.completed_at = datetime.utcnow()
         scan_log.total_scanned = len(result)
         scan_log.new_found = created
