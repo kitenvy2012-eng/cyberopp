@@ -36,6 +36,8 @@ from backend.app.scrapers.custom_scraper import CustomWebScraper
 from backend.app.scrapers.egp_scraper import EGPScraper
 from backend.app.scrapers.ncsa_scraper import NCSAScraper
 from backend.app.scrapers.oncb_scraper import ONCBScraper
+from backend.app.scrapers.supplier_portal import SupplierPortalScraper
+from backend.app.services.source_watch import record_source_scan
 from backend.app.services.bidding import BID_FIELDS, is_actionable, parse_bid_datetime
 from backend.app.services.classifier import (
     calculate_status,
@@ -141,8 +143,10 @@ def seed_database_if_empty(db: Session) -> None:
 
         existing_new_src = db.query(Source).filter(Source.name == src_data["name"]).first()
         adapter = "API" if src_data["source_type"] == "EGP" else ("CUSTOM" if src_data["source_type"] == "CUSTOM_WEB" else "STATIC_HTML")
-        source_type_enum = "PLATFORM" if src_data["source_type"] == "EGP" else "PROCUREMENT_PAGE"
-        health = "DISABLED" if not src_data.get("is_active", True) else ("FAILED" if src_data.get("last_status") == "FAILED" else "HEALTHY")
+        registry_config = json.loads(src_data.get("config_json") or "{}")
+        source_type_enum = registry_config.get("registry_type") or ("PLATFORM" if src_data["source_type"] == "EGP" else "PROCUREMENT_PAGE")
+        active = existing_src.is_active if existing_src else src_data.get("is_active", True)
+        health = "DISABLED" if not active else "NOT_CHECKED"
 
         if not existing_new_src:
             db.add(
@@ -154,8 +158,9 @@ def seed_database_if_empty(db: Session) -> None:
                     adapter_type=adapter,
                     configuration_json=src_data.get("config_json"),
                     is_official=True,
-                    is_active=src_data.get("is_active", True),
+                    is_active=active,
                     health_status=health,
+                    requires_authentication=registry_config.get("requires_authentication", False),
                 )
             )
         else:
@@ -164,8 +169,12 @@ def seed_database_if_empty(db: Session) -> None:
             existing_new_src.url = src_data["url"]
             existing_new_src.adapter_type = adapter
             existing_new_src.configuration_json = src_data.get("config_json")
-            if not src_data.get("is_active", True):
-                existing_new_src.is_active = False
+            existing_new_src.source_type = source_type_enum
+            existing_new_src.requires_authentication = registry_config.get("requires_authentication", False)
+            existing_new_src.is_active = active
+            if existing_new_src.last_checked_at is None and active:
+                existing_new_src.health_status = "NOT_CHECKED"
+            if not active:
                 existing_new_src.health_status = "DISABLED"
     db.commit()
 
@@ -407,8 +416,12 @@ async def _run_full_scan_unlocked(db: Session, *, source_types=None, notify: boo
 
     for source in active_sources:
         source_now = datetime.utcnow()
+        new_count_before = new_found
+        notification_count_before = len(new_tenders)
         try:
-            if source.source_type.upper() == "EGP":
+            if json.loads(source.config_json or "{}").get("adapter") == "SUPPLIER_PORTAL":
+                scraper = SupplierPortalScraper(source.name, source.url)
+            elif source.source_type.upper() == "EGP":
                 scraper = EGPScraper(source.name, source.url, source.config_json)
             elif source.source_type.upper() == "NCSA":
                 scraper = NCSAScraper(source.name, source.url)
@@ -436,7 +449,6 @@ async def _run_full_scan_unlocked(db: Session, *, source_types=None, notify: boo
                 result[:] = await refresh_bid_evidence(result, source_url=source.url)
             outcome = getattr(result, "outcome", None)
             outcome_status = _outcome_status(outcome)
-            source_statuses.append(outcome_status)
             source.last_scanned_at = source_now
             source.last_status = outcome_status
             total_found += len(result)
@@ -474,7 +486,9 @@ async def _run_full_scan_unlocked(db: Session, *, source_types=None, notify: boo
                 )
                 .count()
             )
+            record_source_scan(db, source, outcome, result, datetime.utcnow())
             db.commit()
+            source_statuses.append(outcome_status)
 
             errors = list(getattr(outcome, "errors", []) or [])
             error_note = _safe_error_summary(errors)
@@ -485,6 +499,8 @@ async def _run_full_scan_unlocked(db: Session, *, source_types=None, notify: boo
             )
         except Exception as exc:
             db.rollback()
+            new_found = new_count_before
+            del new_tenders[notification_count_before:]
             source = (
                 db.query(ScraperSource)
                 .filter(ScraperSource.id == source.id)
@@ -493,6 +509,7 @@ async def _run_full_scan_unlocked(db: Session, *, source_types=None, notify: boo
             if source:
                 source.last_scanned_at = source_now
                 source.last_status = "FAILED"
+                record_source_scan(db, source, None, [], datetime.utcnow())
                 db.commit()
             source_statuses.append("FAILED")
             details.append(

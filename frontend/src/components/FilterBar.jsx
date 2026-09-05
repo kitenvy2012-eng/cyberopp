@@ -81,7 +81,7 @@ export default function FilterBar({ filters, setFilters, onReset }) {
               }}
               className="bg-transparent text-emerald-200 text-xs focus:outline-none cursor-pointer"
             >
-              <option value="ACTIVE_ONLY" className="bg-slate-900">🎯 โอกาสใหม่ที่ยังยื่นข้อเสนอได้</option>
+              <option value="ACTIVE_ONLY" className="bg-slate-900">🎯 ประกาศที่ยังต้องตรวจช่วงยื่น</option>
               <option value="ACTIONABLE" className="bg-slate-900">⏱️ เฉพาะที่ยืนยันวันยื่นข้อเสนอแล้ว</option>
               <option value="AWARDED" className="bg-slate-900">🏆 โครงการที่มีผู้ชนะแล้ว (สัญญาแล้ว)</option>
               <option value="ALL" className="bg-slate-900">📁 ประกาศทั้งหมด (ไม่เกิน 1 ปี)</option>

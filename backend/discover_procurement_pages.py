@@ -35,6 +35,12 @@ from bs4 import BeautifulSoup
 
 USER_AGENT = "CyberOppBot/1.0 (public-procurement discovery; respects robots.txt)"
 
+# Verified public entry points found through source search, not guessed paths.
+VERIFIED_ENTRY_POINTS = {
+    "scb.co.th": "https://www.scb.co.th/th/about-us/news/auction-bidding.html",
+    "ais.th": "https://aisprocurement.cloud.ais.th/en",
+}
+
 # Paths Thai companies and state enterprises actually use.
 CANDIDATE_PATHS = (
     "/procurement", "/procurement/", "/th/procurement", "/th/procurement/",
@@ -190,6 +196,7 @@ async def _sitemap_candidates(
 async def discover(company: str, homepage: str, semaphore: asyncio.Semaphore) -> list[Finding]:
     origin = f"{urlsplit(homepage).scheme}://{urlsplit(homepage).netloc}"
     results: list[Finding] = []
+    domain = urlsplit(homepage).hostname.removeprefix("www.")
     async with semaphore:
         async with httpx.AsyncClient(
             timeout=25, follow_redirects=True, headers={"User-Agent": USER_AGENT}
@@ -199,7 +206,26 @@ async def discover(company: str, homepage: str, semaphore: asyncio.Semaphore) ->
                 return [Finding(company, origin, "UNREACHABLE", note="robots.txt unreachable")]
 
             seen: set[str] = set()
-            for url in (urljoin(origin, path) for path in CANDIDATE_PATHS):
+            # Follow actual site navigation before resorting to common paths.
+            # A failed path probe is never proof that a company has no notices.
+            candidates = []
+            verified = VERIFIED_ENTRY_POINTS.get(domain)
+            if verified:
+                verified_origin = f"{urlsplit(verified).scheme}://{urlsplit(verified).netloc}"
+                verified_policy = await _robots(client, verified_origin)
+                results.append(await _check(client, company, verified, verified_policy))
+                seen.add(verified)
+            if _allowed(parser, homepage):
+                try:
+                    root_page = await client.get(homepage)
+                    root_soup = BeautifulSoup(root_page.text, "lxml")
+                    for link in root_soup.select("a[href]"):
+                        candidate = urljoin(homepage, link["href"])
+                        if urlsplit(candidate).netloc == urlsplit(homepage).netloc and SITEMAP_HINT.search(link.get_text(" ", strip=True) + candidate):
+                            candidates.append(candidate)
+                except httpx.HTTPError:
+                    pass
+            for url in candidates[:20] + [urljoin(origin, path) for path in CANDIDATE_PATHS]:
                 if url in seen:
                     continue
                 seen.add(url)
@@ -218,7 +244,7 @@ async def discover(company: str, homepage: str, semaphore: asyncio.Semaphore) ->
                     results.append(finding)
                 if finding.usable:
                     break
-    return results or [Finding(company, origin, "NO_PROCUREMENT_PAGE")]
+    return results or [Finding(company, origin, "NOT_FOUND_IN_CHECKED_PATHS", note="Limited discovery only; not evidence that no public procurement channel exists")]
 
 
 COMPANIES: dict[str, str] = {
@@ -321,11 +347,15 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", help="Write the full findings to this file.")
     parser.add_argument("--concurrency", type=int, default=6)
+    parser.add_argument("--sector", choices=["private", "government", "all"], default="private", help="Default: registered private-sector buyer domains")
     args = parser.parse_args()
 
+    from backend.app.data.seed_data import INITIAL_BUYERS
+    private_companies = {b["name"]: "https://www." + b["domain"] for b in INITIAL_BUYERS if b.get("domain") and b["company_type"] in {"PRIVATE", "PUBLIC"}}
+    targets = private_companies if args.sector == "private" else COMPANIES if args.sector == "government" else {**COMPANIES, **private_companies}
     semaphore = asyncio.Semaphore(max(1, args.concurrency))
     batches = await asyncio.gather(
-        *[discover(name, home, semaphore) for name, home in COMPANIES.items()]
+        *[discover(name, home, semaphore) for name, home in targets.items()]
     )
     findings = [item for batch in batches for item in batch]
 
@@ -348,7 +378,7 @@ async def main() -> int:
     ).most_common():
         print(f"  {n:>3}  {status}")
 
-    print(f"\ncompanies probed: {len(COMPANIES)}   with a usable board: "
+    print(f"\ncompanies probed: {len(targets)}   with a usable board: "
           f"{len({f.company for f in usable})}")
 
     if args.json:

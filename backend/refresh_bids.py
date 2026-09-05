@@ -14,7 +14,7 @@ from backend.app.scrapers.manager import run_full_scan, seed_database_if_empty
 
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-types", nargs="+", default=["ONCB", "GOVERNMENT"], help="Curated source types; defaults to ONCB, DGA and ETDA")
+    parser.add_argument("--source-types", nargs="+", default=["CORPORATE", "ONCB", "GOVERNMENT", "NCSA", "STATE_ENTERPRISE", "BOT"], help="Every invitation-publishing source; excludes only the e-GP contract history")
     parser.add_argument("--notify", action="store_true", help="Send matching configured notifications")
     args = parser.parse_args()
     Base.metadata.create_all(bind=engine)

@@ -51,7 +51,22 @@ async def lifespan(app: FastAPI):
 
     # A first-boot sweep takes minutes, so it runs alongside the app rather than
     # inside startup — a host's health check must not wait for it.
-    backfill_task = asyncio.create_task(_backfill_empty_database()) if needs_backfill else None
+    async def initial_refresh():
+        # Public invitation/source discovery comes first after a cold start.
+        # Archival contract backfill remains explicitly configurable.
+        from backend.app.scrapers.manager import run_full_scan
+        try:
+            with SessionLocal() as refresh_db:
+                await run_full_scan(refresh_db, source_types=settings.SCAN_SOURCE_TYPES
+                    or ["CORPORATE", "ONCB", "GOVERNMENT", "NCSA", "STATE_ENTERPRISE", "BOT"], notify=False)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Initial public-source refresh failed; scheduled scans remain enabled.")
+        if needs_backfill:
+            await _backfill_empty_database()
+
+    backfill_task = asyncio.create_task(initial_refresh())
 
     # Start background scanner
     start_scheduler()

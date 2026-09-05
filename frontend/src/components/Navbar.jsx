@@ -111,6 +111,7 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
 
           {/* Navigation Tabs */}
           <nav className="hidden md:flex items-center space-x-1 bg-slate-900/60 p-1 rounded-xl border border-slate-800">
+            <button onClick={() => setActiveTab('buyers')} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${activeTab === 'buyers' ? 'bg-cyan-500/15 text-cyan-300' : 'text-slate-400'}`}>ติดตามบริษัท</button>
             <button
               onClick={() => setActiveTab('tenders')}
               className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
@@ -174,6 +175,7 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
             </button>
 
             {/* Export CSV */}
+            {activeTab !== 'buyers' && (
             <button
               onClick={handleExportCSV}
               title="ส่งออกรายการตามตัวกรองปัจจุบันเป็น CSV/Excel"
@@ -181,6 +183,7 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
             >
               <Download className="w-4 h-4" />
             </button>
+            )}
 
             {/* Notification Dropdown */}
             <div className="relative">

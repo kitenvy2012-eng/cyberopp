@@ -227,3 +227,19 @@ class Source(Base):
 
     buyer = relationship("Buyer", back_populates="sources")
 
+
+class PublicNotice(Base):
+    """Observed procurement posts, not automatically qualified sales leads."""
+    __tablename__ = "public_notices"
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey("sources.id"), index=True, nullable=False)
+    identity = Column(String(64), unique=True, nullable=False)
+    title = Column(Text, nullable=False)
+    url = Column(String(2000), nullable=False)
+    published_date = Column(String(50), nullable=True, index=True)
+    publication_evidence = Column(Text, nullable=True)
+    notice_status = Column(String(32), default="UNKNOWN")
+    is_cyber = Column(Boolean, default=False)
+    content_hash = Column(String(64), nullable=False)
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, default=datetime.utcnow)

@@ -110,6 +110,7 @@ class CustomWebScraper(BaseScraper):
 
     async def scrape(self) -> ScrapeResult:
         outcome = self.new_outcome()
+        self.public_notices = []
         if self._config_error:
             outcome.errors.append(self._config_error)
 
@@ -135,6 +136,9 @@ class CustomWebScraper(BaseScraper):
         async with fetcher:
             try:
                 root = await fetcher.fetch(self.url)
+                from urllib.parse import urlsplit
+                if urlsplit(self.url).path.strip('/') and not urlsplit(root.url).path.strip('/'):
+                    raise FetchFailure("REDIRECTS_TO_HOME", "Configured procurement page redirects to the homepage; not a verified notice board", url=root.url)
             except FetchFailure as exc:
                 outcome.errors.append(exc.to_scrape_error())
                 outcome.pages_fetched = fetcher.pages_fetched
@@ -174,6 +178,7 @@ class CustomWebScraper(BaseScraper):
 
         outcome.pages_fetched = fetcher.pages_fetched
         outcome.pages_skipped = fetcher.pages_skipped
+        outcome.public_notices = self.public_notices
         if not self._processed_urls:
             return self.finish_outcome(outcome, status=ScrapeStatus.FAILED)
         return self.finish_outcome(outcome)
@@ -285,7 +290,7 @@ class CustomWebScraper(BaseScraper):
             if len(results) >= self.max_items:
                 break
             source_text = self.clean_text(element.get_text(" ", strip=True))
-            if len(source_text) < 8 or not self._matches_keywords(source_text):
+            if len(source_text) < 8:
                 continue
 
             title = _selected_text(element, self.config.get("title_selector"))
@@ -315,6 +320,19 @@ class CustomWebScraper(BaseScraper):
             )
             source_record_id = _selected_text(element, self.config.get("code_selector")) or None
             tor_url = self._extract_tor_url(element, page_url, item_url)
+            # Source activity is broader than cybersecurity. Preserve dated
+            # procurement posts before filtering sales leads, never using a
+            # crawl time, deadline, filename or sitemap lastmod as publication.
+            if is_procurement_relevant(title) or (self.config.get("board_kind") == "SCB" and title.startswith("ยื่นแบบ")):
+                if not hasattr(self, "public_notices"):
+                    self.public_notices = []
+                self.public_notices.append({
+                    "title": title, "url": item_url,
+                    "published_date": announcement_date,
+                    "publication_evidence": _selected_text(element, self.config.get("announcement_date_selector")) or None,
+                })
+            if not self._matches_keywords(source_text):
+                continue
             if _as_bool(self.config.get("identity_from_title"), default=False):
                 identity = f"source:{self.url}|title:{self.clean_text(title).casefold()}"
             else:

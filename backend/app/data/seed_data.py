@@ -293,6 +293,31 @@ INITIAL_BUYERS = [
 # a genuine source outage from a parser that was never correct.
 DEFAULT_SOURCES = [
     {
+        "name": "SCB — ประมูลงานก่อสร้างและจัดซื้อจัดจ้าง",
+        "source_type": "CORPORATE", "buyer_domain": "scb.co.th",
+        "url": "https://www.scb.co.th/th/about-us/news/auction-bidding.html",
+        "is_active": True,
+        "config_json": json.dumps({
+            "agency_name": "ธนาคารไทยพาณิชย์ จำกัด (มหาชน)", "agency_type": "สถาบันการเงิน",
+            "is_official_source": True, "board_kind": "SCB",
+            "item_selector": "a[href*='/getmedia/'][href*='bidding-']",
+            "max_pages": 1, "max_items": 100, "discover_sitemaps": False,
+            "discover_feeds": False, "max_retries": 0, "timeout_seconds": 15,
+            "access_note": "มีบอร์ดประกาศสาธารณะและ PDF แต่คำว่า 'ยื่นแบบ' คือกำหนดยื่น ไม่ใช่วันที่เผยแพร่ จึงไม่เดาวันประกาศจากชื่อไฟล์หรือหัวข้อเดือน; ยังไม่ยืนยันงานไซเบอร์ที่เปิดรับใหม่",
+        }, ensure_ascii=False),
+    },
+    {
+        "name": "AIS — Procurement / ช่องทางคู่ค้า",
+        "source_type": "CORPORATE", "buyer_domain": "ais.th",
+        "url": "https://aisprocurement.cloud.ais.th/en",
+        "is_active": True,
+        "config_json": json.dumps({
+            "adapter": "SUPPLIER_PORTAL", "registry_type": "SUPPLIER_PORTAL",
+            "requires_authentication": True,
+            "access_note": "หน้าแนะนำคู่ค้าอ่านได้สาธารณะ แต่การเข้า Ariba ต้องลงทะเบียน/ได้รับเชิญจากผู้ประสานงาน ไม่ใช่บอร์ด RFP สาธารณะ และยังไม่ใช่งานเปิดรับ",
+        }, ensure_ascii=False),
+    },
+    {
         "name": "สำนักงาน ป.ป.ส. (ONCB) — ประกาศจัดซื้อจัดจ้าง",
         "source_type": "ONCB",
         "url": "https://www.oncb.go.th/procurement",
@@ -589,16 +614,15 @@ DEFAULT_SOURCES = [
         # enabled source would re-scrape the SCG homepage on every cycle and
         # report success while collecting nothing. SCG also names ClaudeBot,
         # GPTBot and CCBot under `Disallow: /` in its robots.txt.
-        # `backend/discover_procurement_pages.py` found no procurement board on
-        # any of the 24 private companies it probed.
+        # A failed path probe is not evidence that a company has no public board.
         "is_active": False,
         "last_status": "DISABLED_NO_PUBLIC_BOARD",
         "config_json": json.dumps({
             "agency_name": "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน)",
             "agency_type": "บริษัทเอกชนชั้นนำ",
             "disabled_reason": (
-                "scg.com/th/procurement/ redirect ไปหน้าแรก ไม่มีหน้าประกาศจัดซื้อสาธารณะ "
-                "ช่องทางจริงของ SCG คือลงทะเบียนคู่ค้า แล้วรับ RFP ทางอีเมล"
+                "scg.com/th/procurement/ redirect ไปหน้าแรก จึงยังใช้ URL นี้เป็นบอร์ดประกาศไม่ได้ "
+                "ต้องค้นหาและตรวจสอบช่องทางอื่นเพิ่ม ไม่ใช่ข้อสรุปว่า SCG ไม่มีประกาศสาธารณะ"
             ),
         }, ensure_ascii=False),
     },

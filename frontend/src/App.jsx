@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
+import BuyerWatch from './components/BuyerWatch';
 import DashboardStats from './components/DashboardStats';
 import FilterBar from './components/FilterBar';
 import TenderCard from './components/TenderCard';
@@ -12,7 +13,8 @@ import { ShieldCheck, Inbox, Loader2, AlertTriangle, RefreshCw } from 'lucide-re
 import { formatThaiDateTime } from './utils/bidding';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('tenders'); // 'tenders' | 'pipeline'
+  const [activeTab, setActiveTab] = useState('tenders'); // 'tenders' | 'buyers' | 'pipeline'
+  const [buyerRefresh, setBuyerRefresh] = useState(0);
   const [stats, setStats] = useState(null);
   const [tenders, setTenders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +123,7 @@ export default function App() {
   };
 
   const handleScanComplete = (result) => {
+    setBuyerRefresh(value => value + 1);
     loadData({ background: true });
     const newRecords = Number(result.new_found || 0);
     const actionableNew = Number(result.actionable_new_found || 0);
@@ -193,6 +196,12 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <div className="flex gap-2 text-sm md:hidden">
+          <button className="p-2 bg-slate-800 rounded-lg" onClick={() => setActiveTab('buyers')}>ติดตามบริษัท</button>
+          <button className="p-2 bg-slate-800 rounded-lg" onClick={() => setActiveTab('tenders')}>โอกาสยื่นข้อเสนอ</button>
+          <button className="p-2 bg-slate-800 rounded-lg" onClick={() => setActiveTab('pipeline')}>Pipeline</button>
+        </div>
+        {activeTab === 'buyers' ? <BuyerWatch refreshKey={buyerRefresh} /> : <>
         {refreshError && (
           <div role="alert" className="rounded-2xl border border-rose-500/40 bg-rose-950/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-rose-100">
             <div className="flex items-start gap-2">
@@ -258,7 +267,7 @@ export default function App() {
                 {filters.open_for_bidding
                   ? 'พบโอกาสที่ยังมีเวลายื่นข้อเสนอ '
                   : filters.opportunity_scope === 'ACTIVE_ONLY'
-                  ? 'พบโอกาสใหม่ที่ยังยื่นข้อเสนอได้ '
+                  ? 'พบประกาศที่ยังต้องตรวจช่วงยื่น '
                   : filters.opportunity_scope === 'AWARDED'
                   ? 'โครงการที่มีผู้ชนะแล้ว/สัญญาแล้ว '
                   : 'ประกาศทั้งหมด '}
@@ -326,6 +335,7 @@ export default function App() {
             onRefresh={loadData}
           />
         )}
+        </>}
       </main>
 
       {/* Modals */}

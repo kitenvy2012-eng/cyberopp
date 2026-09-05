@@ -19,6 +19,19 @@ from backend.app.models.schemas import (
 router = APIRouter(prefix="/buyers", tags=["Buyers"])
 
 
+@router.get("/watch")
+def get_buyer_watch(private_only: bool = True, q: str = "", db: Session = Depends(get_db)):
+    from backend.app.services.source_watch import buyer_watch
+    query = db.query(Buyer).filter(Buyer.active.is_(True))
+    if private_only:
+        query = query.filter(Buyer.company_type.in_(["PRIVATE", "PUBLIC"]))
+    if q.strip():
+        pattern = f"%{q.strip()}%"
+        query = query.filter(or_(Buyer.name.ilike(pattern), Buyer.name_en.ilike(pattern), Buyer.domain.ilike(pattern)))
+    results = [buyer_watch(db, buyer) for buyer in query.limit(500).all()]
+    return sorted(results, key=lambda row: (row["latest_procurement_date"] or "", bool(row["sources"])), reverse=True)
+
+
 @router.get("", response_model=List[BuyerResponse])
 def get_buyers(
     q: Optional[str] = None,
@@ -162,41 +175,33 @@ def get_buyer_activity(buyer_id: int, db: Session = Depends(get_db)):
     if not buyer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Buyer not found")
 
-    # Match tenders by agency name or domain
-    tenders_q = db.query(Tender).filter(
-        Tender.is_demo.is_(False),
-        Tender.is_quarantined.is_(False),
-        Tender.agency.ilike(f"%{buyer.name}%"),
-    )
-
-    total_tenders = tenders_q.count()
-
-    # Source health evaluation
     sources = buyer.sources or []
-    if not sources:
-        overall_health = "NO_SOURCES"
-    elif any(s.health_status == "FAILED" for s in sources):
-        overall_health = "FAILED"
-    elif any(s.health_status == "WARNING" for s in sources):
-        overall_health = "WARNING"
-    else:
-        overall_health = "HEALTHY"
-
+    activity = _real_activity(db, buyer)
+    source_health = {s["id"]: s["health"] for s in activity["sources"]}
     source_responses = []
     for s in sources:
         sr = SourceResponse.model_validate(s)
         sr.buyer_name = buyer.name
+        sr.health_status = source_health[s.id]
         source_responses.append(sr)
+
+    source_states = [s["health"] for s in activity["sources"]]
+    overall_health = "NO_SOURCES" if not source_states else next((s for s in source_states if s != "HEALTHY"), "HEALTHY")
 
     return BuyerActivityResponse(
         buyer_id=buyer.id,
         buyer_name=buyer.name,
-        latest_procurement_date=buyer.latest_procurement_date,
-        latest_cyber_opportunity_date=buyer.latest_cyber_opportunity_date,
-        procurement_count_30d=min(total_tenders, 5),
-        procurement_count_90d=total_tenders,
-        cyber_count_90d=total_tenders,
+        latest_procurement_date=activity["latest_procurement_date"],
+        latest_cyber_opportunity_date=activity["latest_cyber_opportunity_date"],
+        procurement_count_30d=activity["procurement_count_30d"],
+        procurement_count_90d=activity["procurement_count_90d"],
+        cyber_count_90d=activity["cyber_count_90d"],
         source_health=overall_health,
         coverage_score=buyer.procurement_coverage_status,
         sources=source_responses,
     )
+
+
+def _real_activity(db, buyer):
+    from backend.app.services.source_watch import buyer_watch
+    return buyer_watch(db, buyer)

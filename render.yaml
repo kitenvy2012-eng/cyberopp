@@ -12,12 +12,12 @@ services:
     healthCheckPath: /api/health
     envVars:
       # No disk on the free plan, so the database lives in the container and is
-      # discarded whenever it restarts. BACKFILL_ON_EMPTY below rebuilds it from
-      # the official e-GP history on the next boot, which takes about a minute.
+      # discarded whenever it restarts. Startup refreshes current public sources;
+      # historical backfill is opt-in and cannot restore user-entered data.
       - key: DATABASE_URL
         value: sqlite:////data/cyber_opp.db
       - key: BACKFILL_ON_EMPTY
-        value: "true"
+        value: "false"
       # Keep the unattended first run small. A 12-year sweep is killed part-way
       # on a free instance, and with no disk that restarts it from nothing in a
       # loop. Raise this only on a plan with a disk.
@@ -25,13 +25,16 @@ services:
         value: "2"
       - key: SCAN_INTERVAL_MINUTES
         value: "60"
-      # Keep the routine scan to the sources whose notices carry a bid window,
-      # which is all the biddable list needs. Everything wider — the e-GP
-      # history, and BOT with its cache-warming retries — takes longer than a
-      # free instance stays alive and contributes no deadline. Those arrive via
-      # the boot backfill, or an occasional POST /api/scan?full=true.
+      # Every source type that publishes an invitation, measured on a cold
+      # boot: NCSA 0.8s/10 records, STATE_ENTERPRISE 12.6s/4, BOT 303s/30.
+      # BOT is slow only because uncached AEM pages time out before Fastly
+      # serves them, but it is the single largest source of notices, so it
+      # earns its place. Omitting these three cost 44 records against the 9
+      # the rest of the boot scan returns. EGP stays out: it is contract
+      # history where every record already names a winner. It arrives via an
+      # explicitly enabled backfill, or POST /api/scan?full=true.
       - key: SCAN_SOURCE_TYPES
-        value: "ONCB,GOVERNMENT,CORPORATE,CUSTOM_WEB"
+        value: "ONCB,GOVERNMENT,CORPORATE,CUSTOM_WEB,NCSA,STATE_ENTERPRISE,BOT"
       # Not needed while the dashboard proxies /api through Netlify. Set it to
       # the Netlify origin only if the frontend calls this API directly.
       - key: CORS_ORIGINS
@@ -46,8 +49,8 @@ services:
 #   * The instance sleeps after ~15 minutes idle. A sleeping instance runs no
 #     scheduled scans, and the first request after it wakes is slow.
 #   * There is no disk, so bookmarks, pipeline stages and notes you enter in
-#     the dashboard are lost on every restart. Scraped records come back by
-#     themselves; anything you typed does not.
+#     the dashboard are lost on every restart. Only records still available at
+#     source can be refetched; first-seen history and anything typed are lost.
 #
 # To keep data: switch `plan: free` to `plan: starter` (paid) and add
 #

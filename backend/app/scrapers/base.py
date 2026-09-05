@@ -111,6 +111,8 @@ class ScrapeOutcome:
     source_url: str
     status: ScrapeStatus = ScrapeStatus.SUCCESS
     items: List[Dict[str, Any]] = field(default_factory=list)
+    public_notices: List[Dict[str, Any]] = field(default_factory=list)
+    access_status: str = "PUBLIC_LISTING"
     errors: List[ScrapeError] = field(default_factory=list)
     pages_fetched: int = 0
     pages_skipped: int = 0
@@ -123,6 +125,8 @@ class ScrapeOutcome:
             "source_url": self.source_url,
             "status": self.status.value,
             "items": self.items,
+            "public_notices": self.public_notices,
+            "access_status": self.access_status,
             "errors": [error.to_dict() for error in self.errors],
             "pages_fetched": self.pages_fetched,
             "pages_skipped": self.pages_skipped,

@@ -3,6 +3,12 @@
 // time only to call a backend directly, which then needs CORS_ORIGINS set on it.
 const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/+$/, '') || '/api';
 
+export async function fetchBuyerWatch(params, signal) {
+  const res = await fetch(`${API_BASE}/buyers/watch?${new URLSearchParams(params)}`, { signal });
+  if (!res.ok) throw new Error('Unable to load buyer activity');
+  return res.json();
+}
+
 const TENDER_FILTER_KEYS = new Set([
   'q',
   'category',

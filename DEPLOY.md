@@ -47,10 +47,10 @@ Netlify รันได้แค่ static file กับ JS/Go function — ร
 |---|---|---|
 | instance หลับหลังไม่มี traffic ~15 นาที | ใช่ — ไม่สแกนตามรอบตอนหลับ | ไม่หลับ |
 | disk เก็บข้อมูลถาวร | ไม่มี | มี (เพิ่ม `disk:` ใน `render.yaml`) |
-| ข้อมูลที่ scrape มา | หายตอน restart แต่ `BACKFILL_ON_EMPTY` ดึงกลับเองใน ~1 นาที | อยู่ถาวร |
+| ข้อมูลที่ scrape มา | หายตอน restart; ดึงซ้ำได้เฉพาะสิ่งที่ต้นทางยังเผยแพร่ ประวัติพบครั้งแรกกู้ไม่ได้ | อยู่ถาวรเมื่อมี disk |
 | bookmark / pipeline / โน้ตที่พิมพ์เอง | **หายถาวร** | อยู่ถาวร |
 
-ถ้าใช้แค่ดูข้อมูล free พอ ถ้าจะใช้จริงกับทีมขาย (ต้องบันทึก pipeline) ต้องขึ้น starter — ดูราคาปัจจุบันที่ <https://render.com/pricing> ก่อนตัดสินใจ
+ระบบติดตามความสดและเก็บประวัติจำเป็นต้องมีพื้นที่เก็บข้อมูลถาวรและตัวสแกนที่รันตามรอบได้ ไม่ควรถือว่า free instance ที่หลับและล้าง SQLite รองรับเงื่อนไขนี้แล้ว การเปลี่ยนแพ็กเกจต้องให้เจ้าของบัญชีอนุมัติก่อน
 
 ### ทางเลือกอื่น
 
@@ -68,7 +68,7 @@ Netlify รันได้แค่ static file กับ JS/Go function — ร
 | `DATABASE_URL` | `sqlite:////data/cyber_opp.db` (4 slash = absolute path) | ✅ |
 | `SCAN_INTERVAL_MINUTES` | `180` แนะนำสำหรับ production (ค่า default 30 ถี่เกินไปสำหรับ API สาธารณะ) | – |
 | `CORS_ORIGINS` | เว้นว่างไว้เมื่อใช้ proxy; ตั้งเป็น origin ของ Netlify เฉพาะเมื่อเรียก API ตรง | – |
-| `BACKFILL_ON_EMPTY` | `true` เพื่อให้เติมข้อมูลเองตอนบูตครั้งแรก (`render.yaml` ตั้งไว้แล้ว) | – |
+| `BACKFILL_ON_EMPTY` | `false` เป็นค่าเริ่มต้น: ดึงประกาศปัจจุบันก่อน เปิด `true` เฉพาะเมื่อต้องการประวัติ e-GP เพิ่ม | – |
 | `BACKFILL_YEARS_BACK` | จำนวนปีงบที่กวาดตอนเติมครั้งแรก (default `12`) | – |
 | `SCAN_SOURCE_TYPES` | จำกัดรอบสแกนตามเวลาให้เหลือเฉพาะแหล่งที่ลงเอกสารเชิญชวน เช่น `ONCB,GOVERNMENT,BOT,STATE_ENTERPRISE,NCSA` เว้นว่าง = สแกนทุกแหล่ง | – |
 | `DATA_GO_TH_API_KEY` | key จาก <https://opend.data.go.th/register_api> | – |
@@ -79,9 +79,11 @@ Netlify รันได้แค่ static file กับ JS/Go function — ร
 
 image ไม่ได้ใส่ไฟล์ `.db` มาด้วย (อยู่ใน `.dockerignore`) ฐานใหม่จึงว่างเปล่า เลือกทางใดทางหนึ่ง:
 
-**ก. ปล่อยให้เติมเอง** (ค่าเริ่มต้นของ `render.yaml` — ไม่ต้องทำอะไรเลย)
+**ก. ดึงแหล่งประกาศปัจจุบันตอนเริ่มระบบ** (ค่าเริ่มต้นของโค้ด)
 
-เมื่อ `BACKFILL_ON_EMPTY=true` แอปจะตรวจตอนบูตว่าฐานว่างหรือไม่ ถ้าว่างจะกวาดประวัติ e-GP ให้เองแบบ **background** — `/api/health` ตอบทันทีตั้งแต่วินาทีแรก health check ของ host จึงไม่รอ (ทดสอบแล้ว: บูตจากฐานว่าง → health ตอบใน 0 วินาที → ได้ข้อมูลครบใน ~1 นาที)
+แอปสแกน `SCAN_SOURCE_TYPES` แบบ background หลังบูตโดยไม่รอประวัติ e-GP ค่าแนะนำคือ `ONCB,GOVERNMENT,CORPORATE,CUSTOM_WEB,NCSA,STATE_ENTERPRISE,BOT` (วัดจริงจากฐานว่าง: 8 นาที ได้ 103 รายการ ถ้าตัด NCSA/STATE_ENTERPRISE/BOT ออกจะเหลือ 24) แหล่งใดดึงไม่ได้จะแสดงสถานะตามจริง ไม่เติมรายการจำลอง ถ้าตั้ง `BACKFILL_ON_EMPTY=true` และฐานว่าง จึงกวาดประวัติเพิ่มหลังรอบแรก ไม่รับประกันระยะเวลา
+
+สำหรับ Render service เดิม ต้องแก้ Environment `BACKFILL_ON_EMPTY=false` เองด้วย การเปลี่ยน `render.yaml` ไม่ได้ยืนยันว่าค่าของ service ที่สร้างไว้แล้วเปลี่ยนตาม
 
 **ข. สั่งเองผ่าน shell ของ host** ถ้าอยากคุมเวลาเอง:
 
@@ -165,4 +167,4 @@ VITE_API_BASE=https://your-backend-host.example.com/api npm run build
 - **ยังไม่รองรับ Postgres** — `DATABASE_URL` รับค่าอื่นได้ แต่ migration ยังใช้ไวยากรณ์แบบ SQLite (เช่นเทียบ `is_demo = 1`) ถ้าจะย้ายไป Postgres ต้องแก้ `backend/app/core/database.py` ก่อน
 - **API ไม่มีระบบยืนยันตัวตน** — ใครที่รู้ URL ก็ยิง `POST /api/scan` หรือแก้ pipeline ได้ ถ้าเปิดสาธารณะควรใส่ auth หรือจำกัด IP ที่ชั้น host ก่อน
 - **`POST /api/scan` ตอบ 202 ทันที** ไม่รอจนสแกนจบ (รอบเต็มใช้ 5–25 นาที นานกว่าเพดาน proxy ทุกตัว) หน้าเว็บจะตามผลจาก `GET /api/scan/logs` เอง
-- **รอบสแกนเต็มรันไม่จบบน free instance** — วัดจริงแล้วถูกฆ่าที่ ~9 นาที `SCAN_SOURCE_TYPES` จึงถูกตั้งให้สแกนเฉพาะแหล่งที่ลงเอกสารเชิญชวน (จบในไม่กี่สิบวินาที) ส่วนคลัง e-GP มาจาก backfill ตอนบูต
+- **รอบสแกนเต็มอาจรันไม่จบบน free instance** — ใช้ `SCAN_SOURCE_TYPES` จำกัดแหล่งประกาศปัจจุบัน และแยกการกวาดประวัติ e-GP เป็นงานที่สั่งเพิ่มเติม ระยะเวลาขึ้นกับต้นทางและทรัพยากรของ host

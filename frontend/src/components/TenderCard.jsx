@@ -84,7 +84,7 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
   const announceDate = formatThaiDate(tender.announcement_date);
   const announceRelative = formatRelativeDate(tender.announcement_date);
 
-  const isAwarded = tender.bid_notice_status === 'AWARDED' || tender.status === 'CLOSED';
+  const isAwarded = tender.bid_notice_status === 'AWARDED';
   const isDraft = tender.bid_notice_status === 'DRAFT';
   const isInvitation = tender.bid_notice_status === 'INVITATION';
 
@@ -117,8 +117,8 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
             )}
             {isInvitation && (
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                เปิดรับข้อเสนออยู่
+                <FileText className="w-3 h-3" />
+                ประกาศเชิญชวน
               </span>
             )}
             {isDraft && (
