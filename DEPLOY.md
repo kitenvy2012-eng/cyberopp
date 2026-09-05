@@ -4,7 +4,7 @@
 
 | | URL |
 |---|---|
-| Dashboard (Netlify) | <https://preeminent-gecko-16eceb.netlify.app> |
+| Dashboard (Netlify) | <https://cyberopps.netlify.app> |
 | Backend (Render, free) | <https://cyberwatch-api-r6p8.onrender.com> |
 | Repo | <https://github.com/kitenvy2012-eng/cyberopp> |
 
@@ -70,6 +70,7 @@ Netlify รันได้แค่ static file กับ JS/Go function — ร
 | `CORS_ORIGINS` | เว้นว่างไว้เมื่อใช้ proxy; ตั้งเป็น origin ของ Netlify เฉพาะเมื่อเรียก API ตรง | – |
 | `BACKFILL_ON_EMPTY` | `true` เพื่อให้เติมข้อมูลเองตอนบูตครั้งแรก (`render.yaml` ตั้งไว้แล้ว) | – |
 | `BACKFILL_YEARS_BACK` | จำนวนปีงบที่กวาดตอนเติมครั้งแรก (default `12`) | – |
+| `SCAN_SOURCE_TYPES` | จำกัดรอบสแกนตามเวลาให้เหลือเฉพาะแหล่งที่ลงเอกสารเชิญชวน เช่น `ONCB,GOVERNMENT,BOT,STATE_ENTERPRISE,NCSA` เว้นว่าง = สแกนทุกแหล่ง | – |
 | `DATA_GO_TH_API_KEY` | key จาก <https://opend.data.go.th/register_api> | – |
 
 > **`/data` ต้องเป็น volume จริง** ถ้าไม่ mount ฐานข้อมูลจะอยู่ในคอนเทนเนอร์และหายทุกครั้งที่ redeploy
@@ -163,4 +164,5 @@ VITE_API_BASE=https://your-backend-host.example.com/api npm run build
 - **ใช้ worker เดียวเท่านั้น** — `Dockerfile` ตั้ง `--workers 1` ไว้ เพราะตัวล็อกกันสแกนซ้อน (`_SCAN_LOCK`) อยู่ในหน่วยความจำของ process และ SQLite ไม่ชอบการเขียนพร้อมกันหลาย process
 - **ยังไม่รองรับ Postgres** — `DATABASE_URL` รับค่าอื่นได้ แต่ migration ยังใช้ไวยากรณ์แบบ SQLite (เช่นเทียบ `is_demo = 1`) ถ้าจะย้ายไป Postgres ต้องแก้ `backend/app/core/database.py` ก่อน
 - **API ไม่มีระบบยืนยันตัวตน** — ใครที่รู้ URL ก็ยิง `POST /api/scan` หรือแก้ pipeline ได้ ถ้าเปิดสาธารณะควรใส่ auth หรือจำกัด IP ที่ชั้น host ก่อน
-- **`POST /api/scan` ใช้เวลาหลายนาที** — รอบสแกนเต็มวัดได้ 5–25 นาที ซึ่งนานกว่าเพดานของ proxy ทุกตัว ปุ่ม "สแกนทันที" บนหน้าเว็บจึงมักขึ้น timeout ทั้งที่งานฝั่ง backend ยังทำต่อจนจบ ให้ดูผลจริงที่ `GET /api/scan/logs`
+- **`POST /api/scan` ตอบ 202 ทันที** ไม่รอจนสแกนจบ (รอบเต็มใช้ 5–25 นาที นานกว่าเพดาน proxy ทุกตัว) หน้าเว็บจะตามผลจาก `GET /api/scan/logs` เอง
+- **รอบสแกนเต็มรันไม่จบบน free instance** — วัดจริงแล้วถูกฆ่าที่ ~9 นาที `SCAN_SOURCE_TYPES` จึงถูกตั้งให้สแกนเฉพาะแหล่งที่ลงเอกสารเชิญชวน (จบในไม่กี่สิบวินาที) ส่วนคลัง e-GP มาจาก backfill ตอนบูต

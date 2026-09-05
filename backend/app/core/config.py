@@ -33,6 +33,16 @@ class Settings:
     BACKFILL_ENRICH_DETAILS: bool = os.getenv(
         "BACKFILL_ENRICH_DETAILS", "false"
     ).strip().lower() in {"1", "true", "yes", "on"}
+    # Which source types the scheduled scan visits. Empty means all of them.
+    # The point of a routine scan is to keep the *biddable* list current, and
+    # only sources that publish an invitation document carry a bid window —
+    # re-sweeping the e-GP history every cycle adds no deadline and is what
+    # makes a scan too long to finish on a small instance.
+    SCAN_SOURCE_TYPES: List[str] = [
+        item.strip().upper()
+        for item in os.getenv("SCAN_SOURCE_TYPES", "").split(",")
+        if item.strip()
+    ]
     DEFAULT_RETRIES: int = 3
     DEFAULT_TIMEOUT: int = 15
 

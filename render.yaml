@@ -24,7 +24,12 @@ services:
       - key: BACKFILL_YEARS_BACK
         value: "2"
       - key: SCAN_INTERVAL_MINUTES
-        value: "180"
+        value: "60"
+      # Keep the routine scan to the sources that actually publish an
+      # invitation window. A full e-GP re-sweep takes longer than a free
+      # instance stays alive, and yields no bid deadline anyway.
+      - key: SCAN_SOURCE_TYPES
+        value: "ONCB,GOVERNMENT,BOT,STATE_ENTERPRISE,NCSA"
       # Not needed while the dashboard proxies /api through Netlify. Set it to
       # the Netlify origin only if the frontend calls this API directly.
       - key: CORS_ORIGINS

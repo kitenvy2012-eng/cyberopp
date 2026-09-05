@@ -8,10 +8,14 @@ logger = logging.getLogger("cyber_scheduler")
 scheduler = AsyncIOScheduler()
 
 async def scheduled_scan_job():
-    logger.info("Executing periodic cybersecurity tender scan...")
+    logger.info(
+        "Executing periodic cybersecurity tender scan (sources: %s)...",
+        ", ".join(settings.SCAN_SOURCE_TYPES) or "all",
+    )
     db = SessionLocal()
     try:
-        result = await run_full_scan(db)
+        source_types = settings.SCAN_SOURCE_TYPES or None
+        result = await run_full_scan(db, source_types=source_types)
         logger.info(f"Scan finished: {result}")
     except Exception as e:
         logger.error(f"Error during periodic scan: {e}")
