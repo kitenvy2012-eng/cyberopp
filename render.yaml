@@ -31,7 +31,7 @@ services:
       # free instance stays alive and contributes no deadline. Those arrive via
       # the boot backfill, or an occasional POST /api/scan?full=true.
       - key: SCAN_SOURCE_TYPES
-        value: "ONCB,GOVERNMENT"
+        value: "ONCB,GOVERNMENT,CORPORATE,CUSTOM_WEB"
       # Not needed while the dashboard proxies /api through Netlify. Set it to
       # the Netlify origin only if the frontend calls this API directly.
       - key: CORS_ORIGINS
