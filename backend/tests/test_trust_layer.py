@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import date, timedelta
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -19,12 +20,14 @@ def _tender(
     *,
     verified: bool = False,
     quarantined: bool = False,
+    announced_days_ago: int = 30,
 ) -> Tender:
     tender = Tender(
         tender_code=code,
         title=title,
         agency="Test agency",
         category="OTHER",
+        announcement_date=(date.today() - timedelta(days=announced_days_ago)).isoformat(),
         source_name="Test source",
         source_url="https://example.go.th/notices/1",
         tor_url="https://example.go.th/notices/1/tor.pdf",
@@ -141,6 +144,59 @@ class TrustLayerTests(unittest.TestCase):
         self.assertEqual(1, stats["verified_tenders"])
         self.assertEqual(0, stats["pending_tenders"])
         self.assertEqual(1, stats["quarantined_tenders"])
+
+    def test_only_notices_announced_within_a_year_are_listed_newest_first(self):
+        with self.Session() as session:
+            session.add(_tender("FRESH-001", "Announced today", verified=True,
+                                announced_days_ago=0))
+            session.add(_tender("FRESH-002", "Announced six months ago", verified=True,
+                                announced_days_ago=180))
+            session.add(_tender("OLD-001", "Announced two years ago", verified=True,
+                                announced_days_ago=730))
+            # The source published no announcement date, so this record's age
+            # cannot be established and it must not be assumed recent.
+            undated = _tender("NODATE-001", "Source published no date", verified=True)
+            undated.announcement_date = None
+            session.add(undated)
+            session.commit()
+
+        codes = [item["tender_code"] for item in self.client.get("/api/tenders").json()]
+        self.assertNotIn("OLD-001", codes)
+        self.assertNotIn("NODATE-001", codes)
+        self.assertIn("FRESH-001", codes)
+        self.assertIn("FRESH-002", codes)
+        # Newest announcement first.
+        self.assertLess(codes.index("FRESH-001"), codes.index("FRESH-002"))
+
+        dates = [
+            item["announcement_date"]
+            for item in self.client.get("/api/tenders").json()
+        ]
+        self.assertEqual(dates, sorted(dates, reverse=True))
+
+    def test_the_window_can_be_widened_on_request(self):
+        with self.Session() as session:
+            session.add(_tender("OLD-002", "Announced two years ago", verified=True,
+                                announced_days_ago=730))
+            session.commit()
+
+        within_year = [i["tender_code"] for i in self.client.get("/api/tenders").json()]
+        self.assertNotIn("OLD-002", within_year)
+
+        everything = [
+            i["tender_code"]
+            for i in self.client.get("/api/tenders?max_age_days=0").json()
+        ]
+        self.assertIn("OLD-002", everything)
+
+    def test_headline_counts_describe_the_same_window_as_the_list(self):
+        with self.Session() as session:
+            session.add(_tender("OLD-003", "Announced two years ago", verified=True,
+                                announced_days_ago=730))
+            session.commit()
+
+        listed = len(self.client.get("/api/tenders").json())
+        self.assertEqual(listed, self.client.get("/api/stats").json()["total_tenders"])
 
     def test_documents_are_never_generated_for_hidden_records(self):
         with self.Session() as session:

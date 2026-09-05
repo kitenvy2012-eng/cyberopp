@@ -31,7 +31,7 @@ export default function App() {
     agency_type: 'ALL',
     status: 'ALL',
     verification_status: 'ALL',
-    open_for_bidding: true,
+    open_for_bidding: false,
     min_budget: '',
     max_budget: '',
     sort_by: 'newest'
@@ -167,7 +167,7 @@ export default function App() {
       agency_type: 'ALL',
       status: 'ALL',
       verification_status: 'ALL',
-      open_for_bidding: true,
+      open_for_bidding: false,
       min_budget: '',
       max_budget: '',
       sort_by: 'newest'
@@ -220,7 +220,7 @@ export default function App() {
             <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
             <div>
               <span className="font-semibold">โหมดข้อมูลจริง</span>
-              <span className="text-emerald-300/75"> — มุมมองเริ่มต้นแสดงเฉพาะงานที่ยืนยันช่วงยื่นข้อเสนอจากหลักฐานทางการล่าสุด การพบระเบียนจัดซื้อไม่ได้แปลว่ายังเปิดรับ</span>
+              <span className="text-emerald-300/75"> — แสดงเฉพาะประกาศที่ต้นทางลงวันที่ไว้และอายุไม่เกิน 1 ปี เรียงจากใหม่ไปเก่า การพบระเบียนจัดซื้อไม่ได้แปลว่ายังเปิดรับข้อเสนอ</span>
             </div>
           </div>
           {(stats?.unconfirmed_deadline_tenders > 0 || stats?.pending_tenders > 0) && (
@@ -255,7 +255,7 @@ export default function App() {
               <div>
                 {filters.open_for_bidding
                   ? 'พบโอกาสที่ยังมีเวลายื่นข้อเสนอ '
-                  : 'พบข้อมูลจัดซื้อทั้งหมด '}
+                  : 'ประกาศใหม่ล่าสุด (ไม่เกิน 1 ปี) '}
                 <span className="font-semibold text-cyan-400">{tenders.length}</span> โครงการ
                 {filters.category !== 'ALL' && <span> ในหมวด <span className="text-white">{filters.category}</span></span>}
               </div>
@@ -279,12 +279,12 @@ export default function App() {
                   <h4 className="text-base font-semibold text-slate-300">
                     {filters.open_for_bidding
                       ? 'ยังไม่พบประกาศที่ยืนยันว่ามีเวลายื่นข้อเสนอ'
-                      : 'ไม่พบข้อมูลจัดซื้อที่ตรงตามเงื่อนไข'}
+                      : 'ไม่พบประกาศที่ตรงตามเงื่อนไข'}
                   </h4>
                   <p className="text-xs text-slate-500 max-w-lg">
                     {filters.open_for_bidding
-                      ? 'ไม่ได้หมายความว่าไม่มีงาน แต่อาจยังไม่มีประกาศที่มีวันเริ่ม–วันสิ้นสุดครบและตรวจสถานะล่าสุดแล้ว ลองดูข้อมูลจัดซื้อทั้งหมดเพื่อตรวจรายการที่ยังกำหนดเวลาไม่ได้'
-                      : 'ลองเปลี่ยนคำค้นหา หรือล้างตัวกรองเพื่อกลับไปดูประกาศที่ยังมีเวลายื่นข้อเสนอ'}
+                      ? 'ไม่ได้หมายความว่าไม่มีงาน แต่อาจยังไม่มีประกาศที่มีวันเริ่ม–วันสิ้นสุดครบและตรวจสถานะล่าสุดแล้ว'
+                      : 'หน้านี้แสดงเฉพาะประกาศที่ต้นทางลงวันที่ไว้และอายุไม่เกิน 1 ปี ลองเปลี่ยนคำค้นหาหรือล้างตัวกรอง'}
                   </p>
                 </div>
                 <button
@@ -293,7 +293,7 @@ export default function App() {
                     : handleResetFilters()}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold transition-all border border-slate-700"
                 >
-                  {filters.open_for_bidding ? 'ดูข้อมูลจัดซื้อทั้งหมด' : 'กลับไปดูงานที่ยังยื่นได้'}
+                  {filters.open_for_bidding ? 'ดูประกาศใหม่ล่าสุดทั้งหมด' : 'ล้างตัวกรอง'}
                 </button>
               </div>
             ) : (

@@ -26,9 +26,9 @@ export default function DashboardStats({ stats, selectedCategory, onSelectCatego
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-1 text-xs text-slate-400">
         <div className="flex items-center gap-2">
           <Briefcase className="w-4 h-4 text-cyan-400" />
-          <span>ฐานข้อมูลจัดซื้อทั้งหมด <strong className="text-slate-100">{stats.total_tenders || 0}</strong> ระเบียน</span>
+          <span>ประกาศใหม่ล่าสุด (ไม่เกิน 1 ปี) <strong className="text-slate-100">{stats.total_tenders || 0}</strong> ระเบียน</span>
         </div>
-        <span className="text-[11px] text-slate-500">จำนวนรวมไม่ใช่จำนวนงานที่ยังเปิดรับข้อเสนอ</span>
+        <span className="text-[11px] text-slate-500">นับตามวันที่ประกาศลงระบบ — ไม่ใช่จำนวนงานที่ยังเปิดรับข้อเสนอ</span>
       </div>
 
       {/* 4 KPI Cards */}

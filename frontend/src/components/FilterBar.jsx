@@ -62,8 +62,8 @@ export default function FilterBar({ filters, setFilters, onReset }) {
               onChange={(e) => handleChange('open_for_bidding', e.target.value === 'ACTIONABLE')}
               className="bg-transparent text-emerald-200 text-xs focus:outline-none cursor-pointer"
             >
-              <option value="ACTIONABLE" className="bg-slate-900">ยังมีเวลายื่นข้อเสนอ</option>
-              <option value="ALL" className="bg-slate-900">ข้อมูลจัดซื้อทั้งหมด</option>
+              <option value="ALL" className="bg-slate-900">ประกาศใหม่ล่าสุด (ไม่เกิน 1 ปี)</option>
+              <option value="ACTIONABLE" className="bg-slate-900">เฉพาะที่ยังมีเวลายื่นข้อเสนอ</option>
             </select>
           </div>
 

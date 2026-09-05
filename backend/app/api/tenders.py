@@ -2,6 +2,7 @@ import csv
 import hashlib
 import io
 import json
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -18,6 +19,9 @@ from backend.app.services.bidding import is_actionable
 router = APIRouter(prefix="/tenders", tags=["Tenders"])
 
 
+DEFAULT_MAX_AGE_DAYS = 365
+
+
 def apply_trust_scope(query, include_quarantined: bool = False):
     """Hide fabricated/rejected records from normal reads and exports."""
     if not include_quarantined:
@@ -26,6 +30,23 @@ def apply_trust_scope(query, include_quarantined: bool = False):
             Tender.is_quarantined.is_(False),
         )
     return query
+
+
+def apply_recency_window(query, max_age_days: Optional[int] = DEFAULT_MAX_AGE_DAYS):
+    """Keep only notices announced within the window, newest usable first.
+
+    A record whose source never published an announcement date has no provable
+    age, so it cannot satisfy "no older than a year" and is left out rather than
+    shown on the assumption that it is recent. Pass 0 to lift the window.
+    """
+    if not max_age_days or max_age_days <= 0:
+        return query
+    cutoff = (date.today() - timedelta(days=max_age_days)).isoformat()
+    return query.filter(
+        Tender.announcement_date.isnot(None),
+        Tender.announcement_date != "",
+        Tender.announcement_date >= cutoff,
+    )
 
 @router.get("", response_model=List[TenderResponse])
 def get_tenders(
@@ -43,12 +64,14 @@ def get_tenders(
     official_only: bool = False,
     open_for_bidding: bool = False,
     include_quarantined: bool = False,
+    max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
     sort_by: Optional[str] = "newest",
     limit: int = Query(1000, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
     query = apply_trust_scope(db.query(Tender), include_quarantined)
+    query = apply_recency_window(query, max_age_days)
 
     if q:
         search_pattern = f"%{q}%"
@@ -131,9 +154,11 @@ def export_tenders_csv(
     sort_by: Optional[str] = "newest",
     open_for_bidding: bool = False,
     include_quarantined: bool = False,
+    max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
     db: Session = Depends(get_db)
 ):
     query = apply_trust_scope(db.query(Tender), include_quarantined)
+    query = apply_recency_window(query, max_age_days)
     if q:
         search = f"%{q}%"
         query = query.filter(or_(Tender.title.ilike(search), Tender.description.ilike(search), Tender.agency.ilike(search), Tender.tender_code.ilike(search), Tender.sub_categories.ilike(search)))

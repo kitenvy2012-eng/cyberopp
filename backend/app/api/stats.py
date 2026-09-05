@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, noload
 from sqlalchemy import func, desc, or_
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
+from backend.app.api.tenders import DEFAULT_MAX_AGE_DAYS
 from backend.app.core.database import get_db
 from backend.app.models.models import Tender, ScanLog
 from backend.app.models.schemas import StatsResponse, ScanLogResponse
@@ -14,12 +15,22 @@ router = APIRouter(prefix="/stats", tags=["Statistics"])
 @router.get("", response_model=StatsResponse)
 def get_dashboard_stats(
     include_quarantined: bool = False,
+    max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
     db: Session = Depends(get_db),
 ):
     visible_filters = [] if include_quarantined else [
         Tender.is_demo.is_(False),
         Tender.is_quarantined.is_(False),
     ]
+    # The headline numbers have to describe the same rows the list shows, or
+    # the dashboard contradicts itself.
+    if max_age_days and max_age_days > 0:
+        cutoff = (date.today() - timedelta(days=max_age_days)).isoformat()
+        visible_filters = visible_filters + [
+            Tender.announcement_date.isnot(None),
+            Tender.announcement_date != "",
+            Tender.announcement_date >= cutoff,
+        ]
 
     total = db.query(Tender).filter(*visible_filters).count()
     now = datetime.now(BANGKOK)
