@@ -25,11 +25,13 @@ services:
         value: "2"
       - key: SCAN_INTERVAL_MINUTES
         value: "60"
-      # Keep the routine scan to the sources that actually publish an
-      # invitation window. A full e-GP re-sweep takes longer than a free
-      # instance stays alive, and yields no bid deadline anyway.
+      # Keep the routine scan to the sources whose notices carry a bid window,
+      # which is all the biddable list needs. Everything wider — the e-GP
+      # history, and BOT with its cache-warming retries — takes longer than a
+      # free instance stays alive and contributes no deadline. Those arrive via
+      # the boot backfill, or an occasional POST /api/scan?full=true.
       - key: SCAN_SOURCE_TYPES
-        value: "ONCB,GOVERNMENT,BOT,STATE_ENTERPRISE,NCSA"
+        value: "ONCB,GOVERNMENT"
       # Not needed while the dashboard proxies /api through Netlify. Set it to
       # the Netlify origin only if the frontend calls this API directly.
       - key: CORS_ORIGINS
