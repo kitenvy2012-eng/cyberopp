@@ -61,6 +61,14 @@ class TenderProvenanceResponse(BaseModel):
 
 class TenderResponse(TenderBase):
     id: int
+    bidding_state: str = "UNCONFIRMED"
+    bid_start_date: Optional[str] = None
+    bid_deadline_at: Optional[str] = None
+    bid_notice_status: str = "UNKNOWN"
+    bid_evidence_url: Optional[str] = None
+    bid_evidence_hash: Optional[str] = None
+    bid_evidence_excerpt: Optional[str] = None
+    bidding_checked_at: Optional[datetime] = None
     data_origin: str = "UNKNOWN"
     verification_status: str = "PENDING"
     verification_method: Optional[str] = None
@@ -148,6 +156,11 @@ class StatsResponse(BaseModel):
     total_tenders: int
     active_tenders: int
     closing_soon_tenders: int
+    actionable_tenders: int = 0
+    open_now_tenders: int = 0
+    upcoming_tenders: int = 0
+    unconfirmed_deadline_tenders: int = 0
+    stale_bidding_tenders: int = 0
     verified_tenders: int = 0
     pending_tenders: int = 0
     quarantined_tenders: int = 0

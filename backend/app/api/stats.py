@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, noload
 from sqlalchemy import func, desc, or_
+from collections import Counter
+from datetime import datetime, timedelta
 
 from backend.app.core.database import get_db
 from backend.app.models.models import Tender, ScanLog
 from backend.app.models.schemas import StatsResponse, ScanLogResponse
+from backend.app.services.bidding import BANGKOK, ACTIONABLE_STATES, bidding_state, parse_bid_datetime
 
 router = APIRouter(prefix="/stats", tags=["Statistics"])
 
@@ -19,10 +22,15 @@ def get_dashboard_stats(
     ]
 
     total = db.query(Tender).filter(*visible_filters).count()
-    active = db.query(Tender).filter(*visible_filters, Tender.status == "OPEN").count()
-    closing_soon = db.query(Tender).filter(
-        *visible_filters, Tender.status == "CLOSING_SOON"
-    ).count()
+    now = datetime.now(BANGKOK)
+    rows = db.query(Tender).options(noload(Tender.provenance)).filter(*visible_filters).all()
+    bid_counts = Counter(bidding_state(row, now) for row in rows)
+    active = bid_counts["OPEN_NOW"]
+    closing_soon = sum(
+        1 for row in rows
+        if bidding_state(row, now) in ACTIONABLE_STATES
+        and parse_bid_datetime(row.bid_deadline_at) <= now + timedelta(days=7)
+    )
     pipeline = db.query(Tender).filter(
         *visible_filters, Tender.pipeline_stage.notin_(["NONE", None])
     ).count()
@@ -61,6 +69,11 @@ def get_dashboard_stats(
         total_tenders=total,
         active_tenders=active,
         closing_soon_tenders=closing_soon,
+        actionable_tenders=bid_counts["OPEN_NOW"] + bid_counts["UPCOMING"],
+        open_now_tenders=bid_counts["OPEN_NOW"],
+        upcoming_tenders=bid_counts["UPCOMING"],
+        unconfirmed_deadline_tenders=bid_counts["UNCONFIRMED"],
+        stale_bidding_tenders=bid_counts["STALE"],
         verified_tenders=verified,
         pending_tenders=pending,
         quarantined_tenders=quarantined,

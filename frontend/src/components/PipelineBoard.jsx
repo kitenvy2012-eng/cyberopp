@@ -1,6 +1,7 @@
 import React from 'react';
 import { Layers, ArrowRight, CheckCircle2, XCircle, Clock, Building2, ChevronRight, FileText } from 'lucide-react';
 import { updateTender } from '../services/api';
+import { formatThaiDateTime, getBiddingStateConfig } from '../utils/bidding';
 
 const STAGES = [
   { id: 'SAVED', title: 'สนใจ / บันทึกไว้', color: 'border-cyan-500/30 text-cyan-400 bg-cyan-500/10' },
@@ -67,8 +68,10 @@ export default function PipelineBoard({ tenders, onSelectTender, onRefresh }) {
                     ไม่มีโครงการ
                   </div>
                 ) : (
-                  items.map(tender => (
-                    <div
+                  items.map(tender => {
+                    const bidding = getBiddingStateConfig(tender.bidding_state);
+                    const bidDeadline = formatThaiDateTime(tender.bid_deadline_at);
+                    return <div
                       key={tender.id}
                       className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-cyan-500/40 transition-all text-xs space-y-2 group cursor-pointer shadow-sm"
                       onClick={() => onSelectTender(tender)}
@@ -77,12 +80,16 @@ export default function PipelineBoard({ tenders, onSelectTender, onRefresh }) {
                         <span className="text-[10px] font-semibold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.2 rounded">
                           {tender.category}
                         </span>
-                        {tender.submission_deadline && (
-                          <span className="text-[10px] text-amber-400 font-medium">
-                            {tender.submission_deadline}
-                          </span>
-                        )}
+                        <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded border ${bidding.badge}`} title={bidding.description}>
+                          {bidding.label}
+                        </span>
                       </div>
+                      {bidDeadline && (
+                        <div className="flex items-center gap-1 text-[10px] text-amber-300">
+                          <Clock className="w-3 h-3" />
+                          <span>กำหนดปิดที่ยืนยัน: {bidDeadline}</span>
+                        </div>
+                      )}
 
                       <h4 className="font-semibold text-slate-200 line-clamp-2 group-hover:text-cyan-300 leading-snug">
                         {tender.title}
@@ -111,8 +118,8 @@ export default function PipelineBoard({ tenders, onSelectTender, onRefresh }) {
                           </select>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    </div>;
+                  })
                 )}
               </div>
             </div>

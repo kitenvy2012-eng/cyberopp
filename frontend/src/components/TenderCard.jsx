@@ -1,5 +1,6 @@
 import React from 'react';
 import { Bookmark, Calendar, Building2, Landmark, Building, ChevronRight, AlertCircle, Shield, BadgeCheck, CircleDashed, ExternalLink } from 'lucide-react';
+import { formatThaiDateTime, getBiddingStateConfig, normalizeBiddingState } from '../utils/bidding';
 
 const CATEGORY_STYLES = {
   "VA_PENTEST": {
@@ -67,7 +68,7 @@ const AGENCY_TYPE_CONFIG = {
   }
 };
 
-export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdatePipeline }) {
+export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdatePipeline, dataStale = false }) {
   const catStyle = CATEGORY_STYLES[tender.category] || CATEGORY_STYLES["OTHER"];
   const agencyConfig = AGENCY_TYPE_CONFIG[tender.agency_type] || {
     badge: "bg-slate-800 text-slate-400 border-slate-700/60",
@@ -76,15 +77,10 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
   };
   const AgencyIcon = agencyConfig.icon;
 
-  // Calculate days remaining
-  const getDaysRemaining = (deadline) => {
-    if (!deadline) return null;
-    const diff = new Date(deadline) - new Date();
-    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    return days;
-  };
-
-  const daysRemaining = getDaysRemaining(tender.submission_deadline);
+  const biddingState = normalizeBiddingState(tender.bidding_state);
+  const bidding = getBiddingStateConfig(biddingState);
+  const bidStart = formatThaiDateTime(tender.bid_start_date);
+  const bidDeadline = formatThaiDateTime(tender.bid_deadline_at);
 
   const formatPrice = (val) => {
     if (!val || val === 0) return 'ไม่ระบุงบประมาณ';
@@ -99,6 +95,12 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
       <div>
         <div className="flex items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {dataStale && (
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-500/10 text-rose-300 border border-rose-500/30 flex items-center gap-1" title="การรีเฟรช API ครั้งล่าสุดไม่สำเร็จ โปรดเปิดหลักฐานต้นทางก่อนตัดสินใจ">
+                <AlertCircle className="w-3 h-3" />
+                snapshot อาจล้าสมัย
+              </span>
+            )}
             {tender.verification_status === 'VERIFIED' ? (
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <BadgeCheck className="w-3 h-3" />
@@ -120,30 +122,17 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
               <span>{agencyConfig.prefix}{tender.agency_type}</span>
             </span>
 
-            {daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 7 && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse flex items-center space-x-1">
+            <span
+              title={bidding.description}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium border flex items-center gap-1 ${bidding.badge}`}
+            >
+              {['UNCONFIRMED', 'STALE'].includes(biddingState) ? (
                 <AlertCircle className="w-3 h-3" />
-                <span>เหลืออีก {daysRemaining} วัน</span>
-              </span>
-            )}
-
-            {daysRemaining !== null && daysRemaining <= 0 && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-slate-500 border border-slate-700">
-                ปิดรับซองแล้ว
-              </span>
-            )}
-
-            {!tender.submission_deadline && tender.status === 'IN_PROGRESS' && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                ระหว่างดำเนินการ
-              </span>
-            )}
-
-            {!tender.submission_deadline && tender.status === 'UNKNOWN' && (
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
-                ต้นทางไม่ระบุสถานะ
-              </span>
-            )}
+              ) : (
+                <Calendar className="w-3 h-3" />
+              )}
+              <span>{bidding.label}</span>
+            </span>
           </div>
 
           <button
@@ -225,12 +214,30 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
-          {tender.submission_deadline && (
-            <div className="flex items-center space-x-1 text-slate-400 text-[11px] mr-1">
+          <div className="flex flex-col items-end gap-0.5 text-[11px] mr-1">
+            {biddingState === 'UPCOMING' && bidStart && (
+              <div className="flex items-center space-x-1 text-blue-300">
+                <Calendar className="w-3.5 h-3.5" />
+                <span>เริ่ม {bidStart}</span>
+              </div>
+            )}
+            <div className="flex items-center space-x-1 text-slate-400">
               <Calendar className="w-3.5 h-3.5 text-slate-500" />
-              <span>{tender.submission_deadline}</span>
+              <span>{bidDeadline ? `ปิด ${bidDeadline}` : 'ยังยืนยันกำหนดปิดไม่ได้'}</span>
             </div>
-          )}
+            {tender.bid_evidence_url && (
+              <a
+                href={tender.bid_evidence_url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+              >
+                <ExternalLink className="w-3 h-3" />
+                หลักฐานกำหนดเวลา
+              </a>
+            )}
+          </div>
 
           <button
             onClick={() => onSelect(tender)}

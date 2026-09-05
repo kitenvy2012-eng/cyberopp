@@ -53,7 +53,20 @@ export default function FilterBar({ filters, setFilters, onReset }) {
           )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center space-x-1.5 bg-emerald-950/30 border border-emerald-500/30 rounded-xl px-3 py-2 text-xs text-emerald-200">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <select
+              aria-label="ขอบเขตประกาศ"
+              value={filters.open_for_bidding === false ? 'ALL' : 'ACTIONABLE'}
+              onChange={(e) => handleChange('open_for_bidding', e.target.value === 'ACTIONABLE')}
+              className="bg-transparent text-emerald-200 text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="ACTIONABLE" className="bg-slate-900">ยังมีเวลายื่นข้อเสนอ</option>
+              <option value="ALL" className="bg-slate-900">ข้อมูลจัดซื้อทั้งหมด</option>
+            </select>
+          </div>
+
           {/* Sorting */}
           <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-300">
             <ArrowUpDown className="w-3.5 h-3.5 text-cyan-400" />
@@ -160,9 +173,9 @@ export default function FilterBar({ filters, setFilters, onReset }) {
           onChange={(e) => handleChange('status', e.target.value)}
           className="bg-slate-900/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-cyan-500"
         >
-          <option value="ALL" className="bg-slate-900">ทุกสถานะ</option>
-          <option value="OPEN" className="bg-slate-900">กำลังเปิดรับซอง</option>
-          <option value="CLOSING_SOON" className="bg-slate-900">ใกล้หมดเขต (≤ 7 วัน)</option>
+          <option value="ALL" className="bg-slate-900">ทุกสถานะระเบียน</option>
+          <option value="OPEN" className="bg-slate-900">สถานะระเบียน: OPEN</option>
+          <option value="CLOSING_SOON" className="bg-slate-900">สถานะระเบียน: CLOSING_SOON</option>
           <option value="IN_PROGRESS" className="bg-slate-900">โครงการระหว่างดำเนินการ</option>
           <option value="UNKNOWN" className="bg-slate-900">ต้นทางไม่ระบุสถานะ</option>
           <option value="CLOSED" className="bg-slate-900">ปิดรับแล้ว</option>
@@ -224,7 +237,7 @@ export default function FilterBar({ filters, setFilters, onReset }) {
         </div>
 
         {/* Reset button */}
-        {(filters.q || filters.agency_type !== 'ALL' || filters.status !== 'ALL' || filters.verification_status !== 'ALL' || filters.min_budget || filters.max_budget) && (
+        {(filters.q || filters.agency_type !== 'ALL' || filters.status !== 'ALL' || filters.verification_status !== 'ALL' || filters.open_for_bidding === false || filters.min_budget || filters.max_budget) && (
           <button
             onClick={onReset}
             className="text-xs text-rose-400 hover:text-rose-300 ml-auto flex items-center space-x-1"

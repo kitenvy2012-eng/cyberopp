@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from backend.app.data.seed_data import DEFAULT_CHANNELS, DEFAULT_SOURCES
 from backend.app.models.models import (
     NotificationChannel,
+    NotificationLog,
     ScanLog,
     ScraperSource,
     Tender,
@@ -27,9 +29,12 @@ from backend.app.scrapers.base import (
     stable_tender_id,
 )
 from backend.app.scrapers.bot_scraper import BOTScraper
+from backend.app.scrapers.bid_refresh import refresh_bid_evidence
 from backend.app.scrapers.custom_scraper import CustomWebScraper
 from backend.app.scrapers.egp_scraper import EGPScraper
 from backend.app.scrapers.ncsa_scraper import NCSAScraper
+from backend.app.scrapers.oncb_scraper import ONCBScraper
+from backend.app.services.bidding import BID_FIELDS, is_actionable, parse_bid_datetime
 from backend.app.services.classifier import (
     calculate_status,
     classify_tender,
@@ -230,7 +235,30 @@ def seed_database_if_empty(db: Session) -> None:
     db.commit()
 
 
-async def run_full_scan(db: Session) -> Dict[str, Any]:
+def is_scan_running() -> bool:
+    """Whether a scan holds the lock right now, in this process."""
+    return _SCAN_LOCK.locked()
+
+
+def reconcile_interrupted_scans(db: Session) -> int:
+    """Close out scan rows left RUNNING by a process that died mid-scan.
+
+    A restart means nothing is running any more, so a row still marked RUNNING
+    can only be a scan that was killed. Left alone it makes the dashboard report
+    a scan that never finishes, which reads as a permanent failure.
+    """
+    stale = db.query(ScanLog).filter(ScanLog.status == "RUNNING").all()
+    for log in stale:
+        log.status = "INTERRUPTED"
+        log.completed_at = datetime.utcnow()
+        note = "เซิร์ฟเวอร์รีสตาร์ทระหว่างสแกน รอบนี้จึงไม่จบ"
+        log.details = f"{log.details} | {note}" if log.details else note
+    if stale:
+        db.commit()
+    return len(stale)
+
+
+async def run_full_scan(db: Session, *, source_types=None, notify: bool = True) -> Dict[str, Any]:
     """Serialize scans inside the app so manual and scheduled runs cannot race."""
     if _SCAN_LOCK.locked():
         return {
@@ -241,10 +269,10 @@ async def run_full_scan(db: Session) -> Dict[str, Any]:
             "completed_at": datetime.utcnow().isoformat(),
         }
     async with _SCAN_LOCK:
-        return await _run_full_scan_unlocked(db)
+        return await _run_full_scan_unlocked(db, source_types=source_types, notify=notify)
 
 
-async def _run_full_scan_unlocked(db: Session) -> Dict[str, Any]:
+async def _run_full_scan_unlocked(db: Session, *, source_types=None, notify: bool = True) -> Dict[str, Any]:
     """Scan all enabled sources and persist only evidence-backed observations."""
     scan_log = ScanLog(started_at=datetime.utcnow(), status="RUNNING")
     db.add(scan_log)
@@ -256,6 +284,11 @@ async def _run_full_scan_unlocked(db: Session) -> Dict[str, Any]:
         .order_by(ScraperSource.id)
         .all()
     )
+    # Current invitation feeds must not wait behind the large historical sweep.
+    active_sources.sort(key=lambda source: (source.source_type.upper() != "ONCB", source.source_type.upper() == "EGP", source.id))
+    if source_types is not None:
+        allowed_types = {item.upper() for item in source_types}
+        active_sources = [source for source in active_sources if source.source_type.upper() in allowed_types]
     total_found = 0
     new_found = 0
     details: List[str] = []
@@ -271,12 +304,26 @@ async def _run_full_scan_unlocked(db: Session) -> Dict[str, Any]:
                 scraper = NCSAScraper(source.name, source.url)
             elif source.source_type.upper() == "BOT":
                 scraper = BOTScraper(source.name, source.url, source.config_json)
+            elif source.source_type.upper() == "ONCB":
+                config = json.loads(source.config_json or "{}")
+                config["recheck_urls"] = [
+                    tender.source_url for tender in db.query(Tender).filter(
+                        Tender.source_name == source.name,
+                        Tender.bid_notice_status == "INVITATION",
+                        Tender.is_quarantined.is_(False),
+                    ).order_by(Tender.bidding_checked_at.asc()).all()
+                    if parse_bid_datetime(tender.bid_deadline_at)
+                    and parse_bid_datetime(tender.bid_deadline_at) > parse_bid_datetime(source_now, utc_naive=True)
+                ][:50]
+                scraper = ONCBScraper(source.name, source.url, json.dumps(config))
             else:
                 scraper = CustomWebScraper(
                     source.name, source.url, source.config_json
                 )
 
             result = await scraper.scrape()
+            if source.source_type.upper() not in {"ONCB", "EGP", "NCSA"}:
+                result[:] = await refresh_bid_evidence(result, source_url=source.url)
             outcome = getattr(result, "outcome", None)
             outcome_status = _outcome_status(outcome)
             source_statuses.append(outcome_status)
@@ -296,6 +343,10 @@ async def _run_full_scan_unlocked(db: Session) -> Dict[str, Any]:
                     if created:
                         source_new += 1
                         new_found += 1
+                        new_tenders.append(tender)
+                    elif is_actionable(tender):
+                        # A previously unconfirmed row can gain its first
+                        # verified window on a later scan.
                         new_tenders.append(tender)
                 except Exception:
                     # One malformed source row must not make other independently
@@ -354,14 +405,17 @@ async def _run_full_scan_unlocked(db: Session) -> Dict[str, Any]:
         tender.status = calculate_status(tender.submission_deadline or "")
     db.commit()
 
-    # Notifications happen only after durable persistence. Quarantined rows can
-    # never enter this list.
-    for tender in new_tenders:
-        if (
-            not tender.is_demo
-            and not tender.is_quarantined
-            and tender.status != "CLOSED"
-        ):
+    _reconcile_terminal_notices(db)
+    db.commit()
+
+    # Old contracts and unconfirmed dates are useful history, not new bid alerts.
+    alert_candidates = {
+        tender.id: tender for tender in new_tenders
+        if is_actionable(tender)
+        and not db.query(NotificationLog.id).filter(NotificationLog.tender_id == tender.id).first()
+    }
+    for tender in alert_candidates.values():
+        if notify:
             try:
                 await dispatch_tender_notification(tender, db)
             except Exception:
@@ -381,6 +435,7 @@ async def _run_full_scan_unlocked(db: Session) -> Dict[str, Any]:
         "status": final_status,
         "total_scanned": total_found,
         "new_found": new_found,
+        "actionable_new_found": len(alert_candidates),
         "sources": {
             "total": len(active_sources),
             "success": source_statuses.count("SUCCESS"),
@@ -476,6 +531,29 @@ def _normalize_raw_record(
             "last_verified_at": last_verified,
         }
     )
+    # A contract/winner or withdrawal can disqualify an opportunity even when
+    # the source does not supply an invitation window. Publication dates alone
+    # never establish when submissions begin or end.
+    notice_status = _clean(raw.get("bid_notice_status")).upper()
+    if notice_status not in {"INVITATION", "DRAFT", "AWARDED", "CANCELLED"}:
+        if re.search(r"ยกเลิก(?:ประกาศ|การประกวดราคา|โครงการ|การจัดซื้อ)", title):
+            notice_status = "CANCELLED"
+        elif "ผู้ชนะ" in title or "ผู้ได้รับการคัดเลือก" in title:
+            notice_status = "AWARDED"
+        elif "ร่าง" in title or "รับฟังความคิดเห็น" in title:
+            notice_status = "DRAFT"
+        else:
+            notice_status = "UNKNOWN"
+        try:
+            payload = json.loads(raw_payload_json)
+            if isinstance(payload, dict) and (payload.get("project_detail") or {}).get("contract"):
+                notice_status = "AWARDED"
+        except (ValueError, TypeError, AttributeError):
+            pass
+    normalized["bid_notice_status"] = notice_status
+    if notice_status in {"AWARDED", "CANCELLED", "DRAFT"}:
+        normalized["bid_start_date"] = None
+        normalized["bid_deadline_at"] = None
     return normalized
 
 
@@ -537,6 +615,15 @@ def _upsert_tender(
             existing.category = category
             existing.sub_categories = ", ".join(tags) or None
             existing.requirements_summary = requirements
+        # Replace the whole evidence bundle, including nulls, on a successful
+        # reread. Otherwise removed/changed dates could survive indefinitely.
+        if raw.get("bidding_checked_at") and (same_primary_source or not existing.bid_evidence_url):
+            for field in BID_FIELDS:
+                setattr(existing, field, raw.get(field))
+        elif raw.get("bid_notice_status") in {"AWARDED", "CANCELLED", "DRAFT"}:
+            existing.bid_notice_status = raw["bid_notice_status"]
+            existing.bid_start_date = None
+            existing.bid_deadline_at = None
         existing.data_origin = raw["data_origin"]
         existing.source_record_id = source_record_id
         existing.last_seen_at = observed_at
@@ -575,6 +662,7 @@ def _upsert_tender(
         procurement_method=raw.get("procurement_method"),
         announcement_date=raw.get("announcement_date"),
         submission_deadline=raw.get("submission_deadline"),
+        **{field: raw.get(field) for field in BID_FIELDS if field in raw},
         tor_url=raw.get("tor_url"),
         source_name=raw["source_name"],
         source_url=raw["source_url"],
@@ -603,6 +691,51 @@ def _upsert_tender(
     db.add(tender)
     db.flush()
     return tender, True
+
+
+def _notice_project_key(title: str) -> str:
+    """Exact project-title matching only; never fuzzy-match unrelated tenders."""
+    title = title.translate(str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")).lower()
+    title = re.sub(r"^ประกาศ(?:ยกเลิก(?:ประกาศ)?(?:ประกวดราคา)?|ผู้ชนะการเสนอราคา|รายชื่อผู้ชนะการเสนอราคา|ประกวดราคา)", "", title)
+    title = re.split(r"ด้วยวิธี", title, maxsplit=1)[0]
+    return re.sub(r"[\s\W_]+", "", title)
+
+
+def _reconcile_terminal_notices(db: Session) -> None:
+    """A newer exact-match award/cancellation overrides the earlier invitation."""
+    notices = db.query(Tender).filter(
+        Tender.bid_notice_status.in_(["INVITATION", "AWARDED", "CANCELLED"]),
+        Tender.is_demo.is_(False), Tender.is_quarantined.is_(False),
+        Tender.is_official_source.is_(True),
+    ).all()
+    terminal = {}
+    for row in notices:
+        if row.bid_notice_status not in {"AWARDED", "CANCELLED"} or not row.announcement_date:
+            continue
+        key = (row.source_name, row.agency, _notice_project_key(row.title))
+        if key not in terminal or row.announcement_date > terminal[key].announcement_date:
+            terminal[key] = row
+    for invitation in notices:
+        if invitation.bid_notice_status != "INVITATION" or not invitation.announcement_date:
+            continue
+        end = terminal.get((invitation.source_name, invitation.agency, _notice_project_key(invitation.title)))
+        if not end or end.announcement_date < invitation.announcement_date:
+            continue
+        invitation.bid_notice_status = end.bid_notice_status
+        invitation.bid_start_date = None
+        invitation.bid_deadline_at = None
+        invitation.bid_evidence_url = end.bid_evidence_url or end.source_url
+        invitation.bid_evidence_hash = end.bid_evidence_hash or end.evidence_hash
+        invitation.bid_evidence_excerpt = end.bid_evidence_excerpt or end.title
+        invitation.bidding_checked_at = end.bidding_checked_at or end.last_seen_at
+        _append_provenance_if_new(invitation, {
+            "source_name": end.source_name, "source_url": end.source_url,
+            "source_record_id": end.source_record_id, "evidence_hash": end.evidence_hash,
+            "raw_payload_json": end.raw_payload_json, "is_official_source": True,
+            "verification_status": end.verification_status,
+            "announcement_date": end.announcement_date,
+            "provenance": {"verification_notes": "Newer exact-title award/cancellation supersedes invitation."},
+        }, end.last_seen_at or datetime.utcnow(), make_primary=False)
 
 
 def _append_provenance_if_new(

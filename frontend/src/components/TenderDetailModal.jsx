@@ -4,6 +4,7 @@ import {
   Shield, Check, Save, FileText, Globe, BadgeCheck, CircleDashed, Database 
 } from 'lucide-react';
 import { updateTender } from '../services/api';
+import { formatThaiDateTime, getBiddingStateConfig, normalizeBiddingState } from '../utils/bidding';
 
 const PIPELINE_STAGES = [
   { id: "NONE", label: "ยังไม่ติดตาม" },
@@ -15,7 +16,7 @@ const PIPELINE_STAGES = [
   { id: "LOST", label: "ไม่ได้งาน (Lost)" }
 ];
 
-export default function TenderDetailModal({ tender, onClose, onUpdate }) {
+export default function TenderDetailModal({ tender, onClose, onUpdate, dataStale = false }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'source_document' | 'provenance'
   const [pipelineStage, setPipelineStage] = useState(tender.pipeline_stage || "NONE");
   const [notes, setNotes] = useState(tender.notes || "");
@@ -50,6 +51,11 @@ export default function TenderDetailModal({ tender, onClose, onUpdate }) {
 
   const sourceDocumentUrl = tender.tor_url || null;
   const sourcePageUrl = tender.source_record_url || tender.source_url || null;
+  const biddingState = normalizeBiddingState(tender.bidding_state);
+  const bidding = getBiddingStateConfig(biddingState);
+  const bidStart = formatThaiDateTime(tender.bid_start_date);
+  const bidDeadline = formatThaiDateTime(tender.bid_deadline_at);
+  const biddingCheckedAt = formatThaiDateTime(tender.bidding_checked_at);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
@@ -75,6 +81,12 @@ export default function TenderDetailModal({ tender, onClose, onUpdate }) {
                     <CircleDashed className="w-3.5 h-3.5" /> รอยืนยัน
                   </span>
                 )}
+                <span
+                  title={bidding.description}
+                  className={`px-2 py-0.5 rounded-md text-xs border flex items-center gap-1 ${bidding.badge}`}
+                >
+                  <Calendar className="w-3.5 h-3.5" /> {bidding.label}
+                </span>
                 <span className="text-xs text-slate-400">เลขที่: {tender.tender_code}</span>
               </div>
               <h2 className="text-base sm:text-xl font-bold text-white leading-snug">{tender.title}</h2>
@@ -134,6 +146,13 @@ export default function TenderDetailModal({ tender, onClose, onUpdate }) {
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {dataStale && (
+                <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-xs text-rose-100 flex items-start gap-2">
+                  <CircleDashed className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
+                  <div><strong>ข้อมูลหน้าจออาจล้าสมัย:</strong> การอัปเดต API ครั้งล่าสุดไม่สำเร็จ โปรดเปิดหลักฐานกำหนดเวลาจากต้นทางก่อนใช้สถานะนี้ตัดสินใจ</div>
+                </div>
+              )}
+
               {/* Quick Actions Strip */}
               <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
                 <div className="flex items-center space-x-2 text-xs">
@@ -167,6 +186,46 @@ export default function TenderDetailModal({ tender, onClose, onUpdate }) {
                 </div>}
               </div>
 
+              {/* Evidence-backed bidding window */}
+              <div className={`p-4 rounded-xl border ${bidding.badge} space-y-3`}>
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                      <Calendar className="w-4 h-4" />
+                      <span>สถานะยื่นข้อเสนอ: {bidding.label}</span>
+                    </div>
+                    <p className="mt-1 text-xs opacity-80">{bidding.description}</p>
+                  </div>
+                  {tender.bid_evidence_url && (
+                    <a
+                      href={tender.bid_evidence_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-lg bg-slate-950/40 hover:bg-slate-950/60 border border-current/20 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      เปิดหลักฐานกำหนดเวลา
+                    </a>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div><span className="block opacity-60">เริ่มยื่นข้อเสนอ</span><span className="font-medium">{bidStart || 'ยังยืนยันไม่ได้'}</span></div>
+                  <div><span className="block opacity-60">สิ้นสุดการยื่น</span><span className="font-medium">{bidDeadline || 'ยังยืนยันไม่ได้'}</span></div>
+                  <div><span className="block opacity-60">ประเภทประกาศ</span><span className="font-medium">{tender.bid_notice_status === 'INVITATION' ? 'ประกาศเชิญ / ประกวดราคา' : (tender.bid_notice_status || 'ยังยืนยันไม่ได้')}</span></div>
+                  <div><span className="block opacity-60">ตรวจสถานะล่าสุด</span><span className="font-medium">{biddingCheckedAt || 'ยังไม่เคยตรวจ'}</span></div>
+                </div>
+                {tender.bid_evidence_excerpt && (
+                  <div className="rounded-lg bg-slate-950/30 border border-current/10 px-3 py-2 text-xs">
+                    <span className="block opacity-60 mb-1">ข้อความอ้างอิงกำหนดเวลาจากต้นทาง</span>
+                    <span className="text-slate-200 break-words max-h-32 overflow-y-auto block">{tender.bid_evidence_excerpt}</span>
+                  </div>
+                )}
+                {!tender.bid_evidence_url && (
+                  <p className="text-xs opacity-80">ยังไม่มี URL ที่ยืนยันกำหนดเวลา จึงไม่ควรถือว่ารายการนี้เปิดรับข้อเสนอ</p>
+                )}
+                <p className="text-[11px] opacity-60">หากต้นทางระบุเฉพาะวันที่โดยไม่มีเวลา ระบบจะตีความแบบระมัดระวังและไม่ถือว่ายังเปิดรับในวันปิด</p>
+              </div>
+
               {/* Overview Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-4 rounded-xl bg-slate-900/80 border border-slate-800">
                 <div>
@@ -195,8 +254,13 @@ export default function TenderDetailModal({ tender, onClose, onUpdate }) {
                 </div>
 
                 <div>
-                  <span className="text-xs text-slate-400 block">กำหนดวันสุดท้ายยื่นซอง</span>
-                  <span className="text-sm font-semibold text-amber-400">{tender.submission_deadline || 'โปรดดูในประกาศ'}</span>
+                  <span className="text-xs text-slate-400 block">วันเริ่มยื่นข้อเสนอที่ยืนยัน</span>
+                  <span className="text-sm font-semibold text-blue-300">{bidStart || 'ยังยืนยันไม่ได้'}</span>
+                </div>
+
+                <div>
+                  <span className="text-xs text-slate-400 block">กำหนดปิดรับที่ยืนยัน</span>
+                  <span className="text-sm font-semibold text-amber-400">{bidDeadline || 'ยังยืนยันไม่ได้'}</span>
                 </div>
               </div>
 
@@ -326,8 +390,21 @@ export default function TenderDetailModal({ tender, onClose, onUpdate }) {
                 <div><span className="text-slate-500 block">วิธีตรวจ</span><span className="text-slate-200">{tender.verification_method || '-'}</span></div>
                 <div><span className="text-slate-500 block">พบครั้งแรก</span><span className="text-slate-200">{tender.first_seen_at || tender.created_at || '-'}</span></div>
                 <div><span className="text-slate-500 block">ตรวจล่าสุด</span><span className="text-slate-200">{tender.last_verified_at || tender.last_seen_at || '-'}</span></div>
+                <div><span className="text-slate-500 block">สถานะยื่นข้อเสนอ</span><span className="text-slate-200">{biddingState} — {bidding.label}</span></div>
+                <div><span className="text-slate-500 block">ตรวจช่วงยื่นล่าสุด</span><span className="text-slate-200">{biddingCheckedAt || '-'}</span></div>
                 <div className="sm:col-span-2"><span className="text-slate-500 block">Evidence hash</span><span className="font-mono text-[10px] text-slate-300 break-all">{tender.evidence_hash || '-'}</span></div>
               </div>
+              {tender.bid_evidence_url && (
+                <a
+                  href={tender.bid_evidence_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 border border-blue-500/30 font-semibold px-4 py-3 flex items-center justify-center gap-2 text-sm"
+                >
+                  <Calendar className="w-4 h-4" />
+                  เปิดหลักฐานวันเริ่มและวันสิ้นสุดการยื่นข้อเสนอ
+                </a>
+              )}
               {Array.isArray(tender.provenance) && tender.provenance.length > 0 && (
                 <div className="space-y-2">
                   <div className="text-xs font-semibold text-slate-300">หลักฐานที่บันทึกไว้ ({tender.provenance.length})</div>

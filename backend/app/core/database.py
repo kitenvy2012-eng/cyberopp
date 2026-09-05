@@ -16,6 +16,13 @@ Base = declarative_base()
 # deliberately small and idempotent so installations that already have the
 # prototype SQLite database gain the trust fields without losing any rows.
 _TENDER_TRUST_COLUMNS = {
+    "bid_start_date": "VARCHAR(50)",
+    "bid_deadline_at": "VARCHAR(50)",
+    "bid_notice_status": "VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN'",
+    "bid_evidence_url": "VARCHAR(2000)",
+    "bid_evidence_hash": "VARCHAR(64)",
+    "bid_evidence_excerpt": "TEXT",
+    "bidding_checked_at": "DATETIME",
     "data_origin": "VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN'",
     "verification_status": "VARCHAR(32) NOT NULL DEFAULT 'PENDING'",
     "verification_method": "VARCHAR(100)",
@@ -95,6 +102,7 @@ def run_database_migrations() -> None:
             "CREATE INDEX IF NOT EXISTS ix_tenders_source_record_id ON tenders (source_record_id)",
             "CREATE INDEX IF NOT EXISTS ix_tenders_is_demo ON tenders (is_demo)",
             "CREATE INDEX IF NOT EXISTS ix_tenders_is_quarantined ON tenders (is_quarantined)",
+            "CREATE INDEX IF NOT EXISTS ix_tenders_bid_deadline_at ON tenders (bid_deadline_at)",
         ):
             connection.execute(text(index_sql))
 

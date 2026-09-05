@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from backend.app.models.models import Tender, NotificationChannel, NotificationLog
+from backend.app.services.bidding import bidding_state, is_actionable
 
 CATEGORY_COLORS = {
     "VA_PENTEST": 0xE11D48,         # Red-Pink
@@ -30,19 +31,23 @@ async def dispatch_tender_notification(tender: Tender, db: Session) -> int:
     Sends notification for a newly found or updated tender across all active channels
     that match the tender's criteria.
     """
+    if not is_actionable(tender):
+        return 0
     channels = db.query(NotificationChannel).filter(NotificationChannel.is_enabled == True).all()
     sent_count = 0
 
     category_label = CATEGORY_LABELS.get(tender.category, tender.category)
     budget_fmt = f"{tender.budget:,.2f} บาท" if (tender.budget or 0) > 0 else "ไม่ระบุงบประมาณ"
     median_fmt = f"{tender.median_price:,.2f} บาท" if (tender.median_price or 0) > 0 else "ไม่ระบุราคากลาง"
+    bid_label = "เปิดรับข้อเสนออยู่" if bidding_state(tender) == "OPEN_NOW" else "รอวันเปิดรับข้อเสนอ"
+    bid_window = f"{tender.bid_start_date} – {tender.bid_deadline_at} (เวลาไทย)"
 
     # Always create an in-app notification
     in_app_log = NotificationLog(
         tender_id=tender.id,
         channel_type="IN_APP",
         title=f"ประกาศจัดซื้อใหม่: {tender.title[:100]}",
-        message=f"[{category_label}] {tender.agency} - งบประมาณ: {budget_fmt} (กำหนดรับข้อเสนอ: {tender.submission_deadline or 'ไม่ระบุในข้อมูลต้นทาง'})",
+        message=f"[{category_label}] {tender.agency} - งบประมาณ: {budget_fmt} | {bid_label} | {bid_window}",
         status="UNREAD",
         created_at=datetime.utcnow()
     )
@@ -87,7 +92,7 @@ async def dispatch_tender_notification(tender: Tender, db: Session) -> int:
                         f"โครงการ: {tender.title}\n"
                         f"หน่วยงาน: {tender.agency}\n"
                         f"งบประมาณ: {budget_fmt}\n"
-                        f"สถานะ: {tender.status}\n"
+                        f"สถานะ: {bid_label}\nช่วงยื่น: {bid_window}\n"
                         f"หลักฐาน: {tender.tor_url or tender.source_url or 'ไม่ระบุ'}"
                     )
                     headers = {
@@ -121,7 +126,7 @@ async def dispatch_tender_notification(tender: Tender, db: Session) -> int:
                             {"name": "🏷️ หมวดหมู่", "value": category_label, "inline": True},
                             {"name": "💰 งบประมาณ", "value": budget_fmt, "inline": True},
                             {"name": "📊 ราคากลาง", "value": median_fmt, "inline": True},
-                            {"name": "📅 กำหนดยื่นซอง", "value": tender.submission_deadline or "ไม่ระบุในข้อมูลต้นทาง", "inline": True},
+                            {"name": "📅 กำหนดยื่นข้อเสนอ", "value": f"{bid_label}: {bid_window}", "inline": True},
                             {"name": "🔖 เลขที่โครงการ", "value": tender.tender_code, "inline": True}
                         ],
                         "footer": {"text": f"ที่มา: {tender.source_name} | CyberWatch"}
@@ -151,7 +156,7 @@ async def dispatch_tender_notification(tender: Tender, db: Session) -> int:
                         f"🏢 *หน่วยงาน:* {tender.agency}\n"
                         f"🏷️ *หมวดหมู่:* {category_label}\n"
                         f"💰 *งบประมาณ:* {budget_fmt}\n"
-                        f"⏳ *กำหนดยื่นซอง:* {tender.submission_deadline or 'ไม่ระบุในข้อมูลต้นทาง'}\n"
+                        f"⏳ *{bid_label}:* {bid_window}\n"
                         f"🔗 [เปิดหลักฐานต้นทาง]({tender.tor_url or tender.source_url or '#'})"
                     )
                     tg_url = f"https://api.telegram.org/bot{ch.token}/sendMessage"

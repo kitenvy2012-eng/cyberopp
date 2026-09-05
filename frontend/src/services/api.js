@@ -3,15 +3,61 @@
 // time only to call a backend directly, which then needs CORS_ORIGINS set on it.
 const API_BASE = import.meta.env.VITE_API_BASE?.replace(/\/+$/, '') || '/api';
 
-export async function fetchTenders(params = {}) {
+const TENDER_FILTER_KEYS = new Set([
+  'q',
+  'category',
+  'agency_type',
+  'status',
+  'min_budget',
+  'max_budget',
+  'pipeline_stage',
+  'is_bookmarked',
+  'verification_status',
+  'data_origin',
+  'verified_only',
+  'official_only',
+  'open_for_bidding',
+  'include_quarantined',
+  'sort_by',
+  'limit',
+  'offset',
+]);
+
+export function serializeTenderFilters(params = {}) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, val]) => {
-    if (val !== undefined && val !== null && val !== '' && val !== 'ALL') {
+    if (
+      TENDER_FILTER_KEYS.has(key)
+      && val !== undefined
+      && val !== null
+      && val !== ''
+      && val !== 'ALL'
+    ) {
       query.append(key, val);
     }
   });
-  const res = await fetch(`${API_BASE}/tenders?${query.toString()}`);
+  return query.toString();
+}
+
+export function getTenderExportUrl(params = {}) {
+  const query = serializeTenderFilters(params);
+  return `${API_BASE}/tenders/export/csv${query ? `?${query}` : ''}`;
+}
+
+export async function fetchTenders(params = {}) {
+  const query = serializeTenderFilters(params);
+  const res = await fetch(`${API_BASE}/tenders${query ? `?${query}` : ''}`);
   if (!res.ok) throw new Error('Failed to fetch tenders');
+  return res.json();
+}
+
+export async function fetchTender(id) {
+  const res = await fetch(`${API_BASE}/tenders/${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const error = new Error(`Failed to fetch tender (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 }
 

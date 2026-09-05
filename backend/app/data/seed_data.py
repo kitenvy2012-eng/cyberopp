@@ -14,6 +14,17 @@ import json
 # a genuine source outage from a parser that was never correct.
 DEFAULT_SOURCES = [
     {
+        "name": "สำนักงาน ป.ป.ส. (ONCB) — ประกาศจัดซื้อจัดจ้าง",
+        "source_type": "ONCB",
+        "url": "https://www.oncb.go.th/procurement",
+        "is_active": True,
+        "config_json": json.dumps({
+            "max_pages": 8,
+            "is_official_source": True,
+            "verified_note": "Official listing and individual notice HTML publish explicit Thai bid-submission dates and times; active notices are rechecked each scan.",
+        }, ensure_ascii=False),
+    },
+    {
         "name": "e-GP กรมบัญชีกลาง (ระบบจัดซื้อจัดจ้างภาครัฐ)",
         "source_type": "EGP",
         "url": "https://govspending.data.go.th/",

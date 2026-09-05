@@ -25,6 +25,16 @@ class Tender(Base):
     
     announcement_date = Column(String(50), nullable=True) # YYYY-MM-DD
     submission_deadline = Column(String(50), nullable=True) # YYYY-MM-DD
+
+    # Explicit bid invitation evidence. Delivery/contract dates never populate
+    # these fields. Eligibility is derived on every read in Thailand time.
+    bid_start_date = Column(String(50), nullable=True)
+    bid_deadline_at = Column(String(50), nullable=True, index=True)
+    bid_notice_status = Column(String(32), nullable=False, default="UNKNOWN", server_default="UNKNOWN")
+    bid_evidence_url = Column(String(2000), nullable=True)
+    bid_evidence_hash = Column(String(64), nullable=True)
+    bid_evidence_excerpt = Column(Text, nullable=True)
+    bidding_checked_at = Column(DateTime, nullable=True)
     
     tor_url = Column(String(1000), nullable=True)
     source_name = Column(String(255), default="e-GP กรมบัญชีกลาง")
@@ -67,6 +77,11 @@ class Tender(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    @property
+    def bidding_state(self):
+        from backend.app.services.bidding import bidding_state
+        return bidding_state(self)
 
 
 class TenderProvenance(Base):

@@ -13,6 +13,7 @@ from backend.app.models.models import Tender, TenderProvenance
 from backend.app.models.schemas import TenderResponse, TenderCreate, TenderUpdate
 from backend.app.services.classifier import classify_tender, extract_requirements, calculate_status, detect_agency_type
 from backend.app.scrapers.base import URLValidationError, canonicalize_url
+from backend.app.services.bidding import is_actionable
 
 router = APIRouter(prefix="/tenders", tags=["Tenders"])
 
@@ -40,6 +41,7 @@ def get_tenders(
     data_origin: Optional[str] = None,
     verified_only: bool = False,
     official_only: bool = False,
+    open_for_bidding: bool = False,
     include_quarantined: bool = False,
     sort_by: Optional[str] = "newest",
     limit: int = Query(1000, ge=1, le=5000),
@@ -95,7 +97,7 @@ def get_tenders(
 
     # Sorting
     if sort_by == "deadline":
-        query = query.order_by(asc(Tender.submission_deadline))
+        query = query.order_by(asc(Tender.bid_deadline_at if open_for_bidding else Tender.submission_deadline).nullslast(), Tender.id)
     elif sort_by == "budget_desc":
         query = query.order_by(desc(Tender.budget))
     elif sort_by == "budget_asc":
@@ -103,7 +105,13 @@ def get_tenders(
     else: # newest
         query = query.order_by(desc(Tender.announcement_date), desc(Tender.id))
 
-    results = query.offset(offset).limit(limit).all()
+    if open_for_bidding:
+        # Filter before pagination. A stored project status cannot establish
+        # eligibility, and stale evidence must expire even between scans.
+        candidates = query.filter(Tender.bid_deadline_at.isnot(None)).all()
+        results = [item for item in candidates if is_actionable(item)][offset:offset + limit]
+    else:
+        results = query.offset(offset).limit(limit).all()
     return results
 
 @router.get("/export/csv")
@@ -116,13 +124,19 @@ def export_tenders_csv(
     data_origin: Optional[str] = None,
     verified_only: bool = False,
     official_only: bool = False,
+    min_budget: Optional[float] = None,
+    max_budget: Optional[float] = None,
+    pipeline_stage: Optional[str] = None,
+    is_bookmarked: Optional[bool] = None,
+    sort_by: Optional[str] = "newest",
+    open_for_bidding: bool = False,
     include_quarantined: bool = False,
     db: Session = Depends(get_db)
 ):
     query = apply_trust_scope(db.query(Tender), include_quarantined)
     if q:
         search = f"%{q}%"
-        query = query.filter(or_(Tender.title.ilike(search), Tender.agency.ilike(search)))
+        query = query.filter(or_(Tender.title.ilike(search), Tender.description.ilike(search), Tender.agency.ilike(search), Tender.tender_code.ilike(search), Tender.sub_categories.ilike(search)))
     if category and category != "ALL":
         query = query.filter(Tender.category == category)
     if status and status != "ALL":
@@ -137,8 +151,25 @@ def export_tenders_csv(
         query = query.filter(Tender.verification_status == "VERIFIED")
     if official_only:
         query = query.filter(Tender.is_official_source.is_(True))
-
-    tenders = query.order_by(desc(Tender.id)).all()
+    if min_budget is not None and min_budget > 0:
+        query = query.filter(Tender.budget >= min_budget)
+    if max_budget is not None and max_budget > 0:
+        query = query.filter(Tender.budget <= max_budget)
+    if pipeline_stage and pipeline_stage != "ALL":
+        query = query.filter(Tender.pipeline_stage == pipeline_stage)
+    if is_bookmarked is not None:
+        query = query.filter(Tender.is_bookmarked == is_bookmarked)
+    if sort_by == "deadline":
+        query = query.order_by(asc(Tender.bid_deadline_at if open_for_bidding else Tender.submission_deadline).nullslast(), Tender.id)
+    elif sort_by == "budget_desc":
+        query = query.order_by(desc(Tender.budget))
+    elif sort_by == "budget_asc":
+        query = query.order_by(asc(Tender.budget))
+    else:
+        query = query.order_by(desc(Tender.announcement_date), desc(Tender.id))
+    tenders = query.all()
+    if open_for_bidding:
+        tenders = [item for item in tenders if is_actionable(item)]
 
     output = io.StringIO()
     output.write('\ufeff') # UTF-8 BOM
@@ -148,7 +179,9 @@ def export_tenders_csv(
         "งบประมาณ (บาท)", "ราคากลาง (บาท)", "วิธีการจัดหา", "วันที่ประกาศ",
         "กำหนดยื่นซอง", "สถานะ", "ลิงก์ TOR ต้นฉบับ", "ที่มา", "URL แหล่งข้อมูล",
         "ที่มาของเรคอร์ด", "สถานะการตรวจสอบ", "แหล่งทางการ", "คะแนนความมั่นใจ",
-        "พบครั้งแรก", "ตรวจสอบล่าสุด", "Quarantine", "เหตุผล Quarantine"
+        "พบครั้งแรก", "ตรวจสอบล่าสุด", "Quarantine", "เหตุผล Quarantine",
+        "สถานะการยื่นข้อเสนอ", "เริ่มรับข้อเสนอ", "ปิดรับข้อเสนอ (เวลาไทย)",
+        "หลักฐานกำหนดรับข้อเสนอ", "ตรวจกำหนดรับล่าสุด"
     ])
 
     for t in tenders:
@@ -163,7 +196,10 @@ def export_tenders_csv(
             t.confidence_score if t.confidence_score is not None else "",
             t.first_seen_at.isoformat() if t.first_seen_at else "",
             t.last_verified_at.isoformat() if t.last_verified_at else "",
-            t.is_quarantined, t.quarantine_reason or ""
+            t.is_quarantined, t.quarantine_reason or "",
+            t.bidding_state, t.bid_start_date or "", t.bid_deadline_at or "",
+            t.bid_evidence_url or "",
+            t.bidding_checked_at.isoformat() if t.bidding_checked_at else "",
         ])
 
     output.seek(0)

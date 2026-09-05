@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Bell, RefreshCw, Download, Layers, Radio, Settings, CheckCheck, ExternalLink } from 'lucide-react';
-import { triggerScan, fetchNotificationLogs, markNotificationsRead } from '../services/api';
+import { triggerScan, fetchScanLogs, fetchNotificationLogs, markNotificationsRead, getTenderExportUrl } from '../services/api';
 
-export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpenSettings, onOpenSources, onSelectTender }) {
+export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpenSettings, onOpenSources, onSelectTender, tenderFilters = {} }) {
   const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -25,17 +26,55 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
     return () => clearInterval(interval);
   }, []);
 
+  // A scan runs for minutes on the server. The request only starts it, so the
+  // button waits for the scan log to close out instead of for the response —
+  // otherwise a scan that is merely slow looks like one that failed.
   const handleScan = async () => {
     setScanning(true);
     try {
       const res = await triggerScan();
+      if (res?.status === 'ALREADY_RUNNING') {
+        setScanStatus('มีรอบสแกนกำลังทำงานอยู่');
+      } else {
+        setScanStatus('กำลังสแกนแหล่งข้อมูล...');
+      }
+      const latest = await waitForScanToFinish();
+      setScanStatus(describeScanResult(latest));
       await loadNotifications();
-      if (onScanComplete) onScanComplete(res);
+      if (onScanComplete) onScanComplete(latest);
     } catch (e) {
-      alert('การสแกนล้มเหลว: ' + e.message);
+      setScanStatus('เริ่มสแกนไม่สำเร็จ: ' + e.message);
     } finally {
       setScanning(false);
     }
+  };
+
+  // Poll until the newest log stops being RUNNING, then report what it says.
+  const waitForScanToFinish = async ({ timeoutMs = 30 * 60 * 1000, intervalMs = 5000 } = {}) => {
+    const deadline = Date.now() + timeoutMs;
+    let latest = null;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      try {
+        const logs = await fetchScanLogs();
+        latest = logs?.[0] || null;
+        if (latest && latest.status !== 'RUNNING') return latest;
+      } catch {
+        // A single failed poll (a sleeping free instance, say) is not a failed
+        // scan; keep waiting for the deadline.
+      }
+    }
+    return latest;
+  };
+
+  const describeScanResult = (log) => {
+    if (!log) return 'สแกนยังไม่จบ — ดูผลได้ที่ประวัติการสแกน';
+    const found = log.total_scanned ?? 0;
+    const added = log.new_found ?? 0;
+    if (log.status === 'INTERRUPTED') return 'รอบสแกนถูกขัดจังหวะ (เซิร์ฟเวอร์รีสตาร์ท)';
+    if (log.status === 'FAILED') return 'สแกนไม่สำเร็จ — ตรวจสถานะแหล่งข้อมูล';
+    const label = log.status === 'PARTIAL' ? 'สแกนเสร็จบางส่วน' : 'สแกนเสร็จแล้ว';
+    return `${label}: พบ ${found.toLocaleString('th-TH')} รายการ ใหม่ ${added.toLocaleString('th-TH')}`;
   };
 
   const handleMarkAllRead = async () => {
@@ -49,7 +88,7 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
   };
 
   const handleExportCSV = () => {
-    window.open('/api/tenders/export/csv', '_blank');
+    window.open(getTenderExportUrl(tenderFilters), '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -81,7 +120,7 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
               }`}
             >
               <Radio className="w-4 h-4" />
-              <span>ข้อมูลจัดซื้อทั้งหมด</span>
+              <span>ค้นหาโอกาสยื่นข้อเสนอ</span>
             </button>
 
             <button
@@ -115,9 +154,19 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
           {/* Actions */}
           <div className="flex items-center space-x-2">
             {/* Scan Now Button */}
+            {scanStatus && (
+              <span
+                className="hidden lg:inline max-w-[22rem] truncate text-[11px] text-slate-400"
+                title={scanStatus}
+              >
+                {scanStatus}
+              </span>
+            )}
+
             <button
               onClick={handleScan}
               disabled={scanning}
+              title={scanStatus || 'สแกนแหล่งข้อมูลทั้งหมด (ใช้เวลาหลายนาที)'}
               className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs sm:text-sm font-medium transition-all shadow-md shadow-cyan-500/20 active:scale-95 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${scanning ? 'animate-spin' : ''}`} />
@@ -127,7 +176,7 @@ export default function Navbar({ activeTab, setActiveTab, onScanComplete, onOpen
             {/* Export CSV */}
             <button
               onClick={handleExportCSV}
-              title="ส่งออกรายการเป็น CSV/Excel"
+              title="ส่งออกรายการตามตัวกรองปัจจุบันเป็น CSV/Excel"
               className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-all"
             >
               <Download className="w-4 h-4" />

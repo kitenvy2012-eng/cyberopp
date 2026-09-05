@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
 import DashboardStats from './components/DashboardStats';
 import FilterBar from './components/FilterBar';
@@ -7,8 +7,9 @@ import TenderDetailModal from './components/TenderDetailModal';
 import PipelineBoard from './components/PipelineBoard';
 import SourcesModal from './components/SourcesModal';
 import NotificationSettingsModal from './components/NotificationSettingsModal';
-import { fetchTenders, fetchStats, updateTender } from './services/api';
-import { ShieldCheck, Inbox, Loader2, AlertTriangle } from 'lucide-react';
+import { fetchTender, fetchTenders, fetchStats, updateTender } from './services/api';
+import { ShieldCheck, Inbox, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { formatThaiDateTime } from './utils/bidding';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('tenders'); // 'tenders' | 'pipeline'
@@ -18,6 +19,11 @@ export default function App() {
   const [selectedTender, setSelectedTender] = useState(null);
   const [isSourcesOpen, setIsSourcesOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  const [lastSuccessfulRefresh, setLastSuccessfulRefresh] = useState(null);
+  const latestRequestRef = useRef(0);
+  const lastAutoRefreshRef = useRef(0);
+  const selectedTenderRef = useRef(null);
 
   const [filters, setFilters] = useState({
     q: '',
@@ -25,29 +31,72 @@ export default function App() {
     agency_type: 'ALL',
     status: 'ALL',
     verification_status: 'ALL',
+    open_for_bidding: true,
     min_budget: '',
     max_budget: '',
     sort_by: 'newest'
   });
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async ({ background = false } = {}) => {
+    const requestId = ++latestRequestRef.current;
+    const selectedTenderId = selectedTenderRef.current?.id || null;
+    if (!background) setLoading(true);
     try {
-      const [statsData, tendersData] = await Promise.all([
+      const [statsData, tendersData, selectedTenderData] = await Promise.all([
         fetchStats(),
-        fetchTenders(filters)
+        fetchTenders(activeTab === 'pipeline'
+          ? { ...filters, open_for_bidding: false }
+          : filters),
+        selectedTenderId ? fetchTender(selectedTenderId) : Promise.resolve(null),
       ]);
+      if (requestId !== latestRequestRef.current) return;
       setStats(statsData);
       setTenders(tendersData);
+      if (selectedTenderId && selectedTenderData) {
+        setSelectedTender(previous => (
+          previous?.id === selectedTenderId ? selectedTenderData : previous
+        ));
+      }
+      setRefreshError(null);
+      setLastSuccessfulRefresh(new Date());
     } catch (e) {
       console.error('Failed to load data:', e);
+      if (requestId === latestRequestRef.current) {
+        setRefreshError({
+          message: e?.message || 'ไม่สามารถติดต่อ API ได้',
+          failedAt: new Date(),
+        });
+      }
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestRef.current) setLoading(false);
     }
-  }, [filters]);
+  }, [filters, activeTab]);
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    selectedTenderRef.current = selectedTender;
+  }, [selectedTender]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastAutoRefreshRef.current < 1000) return;
+      lastAutoRefreshRef.current = now;
+      loadData({ background: true });
+    };
+
+    const interval = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [loadData]);
 
   // Audio notification chime
@@ -71,18 +120,23 @@ export default function App() {
   };
 
   const handleScanComplete = (result) => {
-    loadData();
+    loadData({ background: true });
+    const newRecords = Number(result.new_found || 0);
+    const actionableNew = Number(result.actionable_new_found || 0);
     if (result.status === 'SKIPPED') {
       alert(`มีรอบสแกนกำลังทำงานอยู่แล้ว — ${result.details || 'โปรดลองใหม่ภายหลัง'}`);
     } else if (result.status === 'FAILED') {
       alert(`❌ สแกนไม่สำเร็จ\n${result.details || 'กรุณาตรวจสอบแหล่งข้อมูลและ API key'}`);
     } else if (result.status === 'PARTIAL') {
-      alert(`⚠️ สแกนได้บางส่วน พบใหม่ ${result.new_found || 0} รายการ\n${result.details || ''}`);
-    } else if (result.new_found > 0) {
+      if (actionableNew > 0) playAlertSound();
+      alert(`⚠️ สแกนได้บางส่วน\nระเบียนใหม่ ${newRecords} รายการ (อาจรวมข้อมูลย้อนหลัง)\nโอกาสใหม่ที่ยังยื่นได้ ${actionableNew} รายการ\n${result.details || ''}`);
+    } else if (actionableNew > 0) {
       playAlertSound();
-      alert(`🎉 พบประกาศ Cybersecurity ใหม่ ${result.new_found} รายการ!`);
+      alert(`🎉 พบโอกาสใหม่ที่ยังยื่นข้อเสนอได้ ${actionableNew} รายการ\nนำเข้าระเบียนใหม่ทั้งหมด ${newRecords} รายการ (อาจรวมข้อมูลย้อนหลัง)`);
+    } else if (newRecords > 0) {
+      alert(`สแกนเสร็จสิ้น เพิ่มระเบียนใหม่ ${newRecords} รายการ (อาจรวมข้อมูลย้อนหลัง)\nยังไม่พบโอกาสใหม่ที่ยืนยันว่ามีเวลายื่นข้อเสนอ`);
     } else {
-      alert('สแกนเสร็จสิ้น ไม่พบประกาศใหม่เพิ่มเติม');
+      alert('สแกนเสร็จสิ้น ไม่พบระเบียนหรือโอกาสยื่นข้อเสนอใหม่');
     }
   };
 
@@ -99,11 +153,8 @@ export default function App() {
 
   const handleSelectTenderById = async (tenderId) => {
     try {
-      const res = await fetch(`/api/tenders/${tenderId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedTender(data);
-      }
+      const data = await fetchTender(tenderId);
+      setSelectedTender(data);
     } catch (e) {
       console.error(e);
     }
@@ -116,6 +167,7 @@ export default function App() {
       agency_type: 'ALL',
       status: 'ALL',
       verification_status: 'ALL',
+      open_for_bidding: true,
       min_budget: '',
       max_budget: '',
       sort_by: 'newest'
@@ -132,22 +184,49 @@ export default function App() {
         onOpenSources={() => setIsSourcesOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onSelectTender={handleSelectTenderById}
+        tenderFilters={activeTab === 'pipeline'
+          ? { ...filters, open_for_bidding: false }
+          : filters}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {refreshError && (
+          <div role="alert" className="rounded-2xl border border-rose-500/40 bg-rose-950/30 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-rose-100">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <div className="font-semibold">อัปเดตสถานะล่าสุดไม่สำเร็จ — ข้อมูลบนหน้าจออาจล้าสมัย</div>
+                <div className="mt-0.5 text-rose-200/75">
+                  {lastSuccessfulRefresh
+                    ? `ข้อมูลที่เห็นมาจากการโหลดสำเร็จเมื่อ ${formatThaiDateTime(lastSuccessfulRefresh)}`
+                    : 'ยังไม่มีการโหลดข้อมูลสำเร็จในรอบนี้'}
+                  {' '}อย่าถือป้าย “เปิดรับ” เป็นสถานะปัจจุบันจนกว่าจะรีเฟรชสำเร็จหรือเปิดตรวจหลักฐานต้นทาง
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => loadData()}
+              className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-100 font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              ลองอัปเดตอีกครั้ง
+            </button>
+          </div>
+        )}
+
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
           <div className="flex items-start gap-2 text-emerald-200">
             <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
             <div>
               <span className="font-semibold">โหมดข้อมูลจริง</span>
-              <span className="text-emerald-300/75"> — ไม่มีข้อมูล demo/mock อยู่ในระบบแล้ว ทุกรายการมาจากการดึงสดจากแหล่งจริงและมีลิงก์หลักฐานย้อนกลับได้</span>
+              <span className="text-emerald-300/75"> — มุมมองเริ่มต้นแสดงเฉพาะงานที่ยืนยันช่วงยื่นข้อเสนอจากหลักฐานทางการล่าสุด การพบระเบียนจัดซื้อไม่ได้แปลว่ายังเปิดรับ</span>
             </div>
           </div>
-          {(stats?.pending_tenders > 0 || stats?.quarantined_tenders > 0) && (
+          {(stats?.unconfirmed_deadline_tenders > 0 || stats?.pending_tenders > 0) && (
             <div className="flex items-center gap-1.5 text-amber-300 whitespace-nowrap">
               <AlertTriangle className="w-3.5 h-3.5" />
-              <span>รอตรวจ {stats?.pending_tenders || 0} • กักกัน {stats?.quarantined_tenders || 0}</span>
+              <span>ยืนยันกำหนดเวลาไม่ได้ {stats?.unconfirmed_deadline_tenders || 0} • รอตรวจข้อมูล {stats?.pending_tenders || 0}</span>
             </div>
           )}
         </div>
@@ -174,12 +253,15 @@ export default function App() {
             {/* Results Header */}
             <div className="flex items-center justify-between px-1 text-xs text-slate-400">
               <div>
-                พบทั้งหมด <span className="font-semibold text-cyan-400">{tenders.length}</span> โครงการ
+                {filters.open_for_bidding
+                  ? 'พบโอกาสที่ยังมีเวลายื่นข้อเสนอ '
+                  : 'พบข้อมูลจัดซื้อทั้งหมด '}
+                <span className="font-semibold text-cyan-400">{tenders.length}</span> โครงการ
                 {filters.category !== 'ALL' && <span> ในหมวด <span className="text-white">{filters.category}</span></span>}
               </div>
               {stats?.latest_scan?.completed_at && (
                 <div className="hidden sm:block text-[11px] text-slate-500">
-                  สแกนล่าสุด: {new Date(stats.latest_scan.completed_at).toLocaleTimeString('th-TH')}
+                  สแกนล่าสุด: {formatThaiDateTime(stats.latest_scan.completed_at)}
                 </div>
               )}
             </div>
@@ -194,14 +276,24 @@ export default function App() {
               <div className="min-h-[300px] rounded-2xl bg-[#131B2B]/60 border border-slate-800 flex flex-col items-center justify-center p-8 text-center space-y-3">
                 <Inbox className="w-12 h-12 text-slate-600" />
                 <div className="space-y-1">
-                  <h4 className="text-base font-semibold text-slate-300">ไม่พบประกาศที่ตรงตามเงื่อนไข</h4>
-                  <p className="text-xs text-slate-500 max-w-md">ลองเปลี่ยนคำค้นหา หรือกดล้างตัวกรองเพื่อดูโครงการทั้งหมด</p>
+                  <h4 className="text-base font-semibold text-slate-300">
+                    {filters.open_for_bidding
+                      ? 'ยังไม่พบประกาศที่ยืนยันว่ามีเวลายื่นข้อเสนอ'
+                      : 'ไม่พบข้อมูลจัดซื้อที่ตรงตามเงื่อนไข'}
+                  </h4>
+                  <p className="text-xs text-slate-500 max-w-lg">
+                    {filters.open_for_bidding
+                      ? 'ไม่ได้หมายความว่าไม่มีงาน แต่อาจยังไม่มีประกาศที่มีวันเริ่ม–วันสิ้นสุดครบและตรวจสถานะล่าสุดแล้ว ลองดูข้อมูลจัดซื้อทั้งหมดเพื่อตรวจรายการที่ยังกำหนดเวลาไม่ได้'
+                      : 'ลองเปลี่ยนคำค้นหา หรือล้างตัวกรองเพื่อกลับไปดูประกาศที่ยังมีเวลายื่นข้อเสนอ'}
+                  </p>
                 </div>
                 <button
-                  onClick={handleResetFilters}
+                  onClick={() => filters.open_for_bidding
+                    ? setFilters(prev => ({ ...prev, open_for_bidding: false }))
+                    : handleResetFilters()}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold transition-all border border-slate-700"
                 >
-                  ล้างตัวกรองทั้งหมด
+                  {filters.open_for_bidding ? 'ดูข้อมูลจัดซื้อทั้งหมด' : 'กลับไปดูงานที่ยังยื่นได้'}
                 </button>
               </div>
             ) : (
@@ -210,6 +302,7 @@ export default function App() {
                   <TenderCard
                     key={tender.id}
                     tender={tender}
+                    dataStale={Boolean(refreshError)}
                     onSelect={(t) => setSelectedTender(t)}
                     onToggleBookmark={handleToggleBookmark}
                   />
@@ -233,6 +326,7 @@ export default function App() {
       {selectedTender && (
         <TenderDetailModal
           tender={selectedTender}
+          dataStale={Boolean(refreshError)}
           onClose={() => setSelectedTender(null)}
           onUpdate={() => {
             loadData();

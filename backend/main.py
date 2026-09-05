@@ -10,7 +10,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import Base, engine, SessionLocal, run_database_migrations
 from backend.app.core.scheduler import start_scheduler, stop_scheduler
 from backend.app.models.models import Tender
-from backend.app.scrapers.manager import seed_database_if_empty
+from backend.app.scrapers.manager import reconcile_interrupted_scans, seed_database_if_empty
 from backend.app.api.tenders import router as tenders_router
 from backend.app.api.stats import router as stats_router
 from backend.app.api.sources import router as sources_router
@@ -30,6 +30,12 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_database_if_empty(db)
+        # This process just started, so nothing can still be scanning. Any row
+        # left RUNNING belongs to a scan a restart killed, and leaving it there
+        # makes the dashboard show a scan that never finishes.
+        interrupted = reconcile_interrupted_scans(db)
+        if interrupted:
+            logger.info("Closed %s scan(s) interrupted by a restart.", interrupted)
         logger.info("Initial data check and seeding completed.")
         needs_backfill = settings.BACKFILL_ON_EMPTY and db.query(Tender).count() == 0
     finally:
