@@ -16,6 +16,7 @@ router = APIRouter(prefix="/stats", tags=["Statistics"])
 def get_dashboard_stats(
     include_quarantined: bool = False,
     max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
+    include_awarded: bool = False,
     db: Session = Depends(get_db),
 ):
     visible_filters = [] if include_quarantined else [
@@ -31,6 +32,8 @@ def get_dashboard_stats(
             Tender.announcement_date != "",
             Tender.announcement_date >= cutoff,
         ]
+    if not include_awarded:
+        visible_filters = visible_filters + [Tender.bid_notice_status != "AWARDED"]
 
     total = db.query(Tender).filter(*visible_filters).count()
     now = datetime.now(BANGKOK)

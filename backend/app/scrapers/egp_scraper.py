@@ -405,6 +405,10 @@ class EGPScraper(BaseScraper):
                 awarded_to.append(" / ".join(parts))
         if awarded_to:
             notes.append("ผู้ได้รับการคัดเลือกตามข้อมูลสัญญา: " + "; ".join(awarded_to[:3]))
+            # A signed contract with a named winner means this competition is
+            # over. Recording it lets the dashboard stop offering the project as
+            # something to bid on; `bidding.py` already reads AWARDED as closed.
+            item["bid_notice_status"] = "AWARDED"
 
         if notes:
             existing = item.get("description")

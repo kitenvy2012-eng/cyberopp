@@ -32,6 +32,19 @@ def apply_trust_scope(query, include_quarantined: bool = False):
     return query
 
 
+def exclude_awarded(query, include_awarded: bool = False, opportunity_scope: Optional[str] = None):
+    """Drop projects whose evidence already names a contract winner.
+
+    These are not opportunities — the competition is decided. They stay in the
+    database as market intelligence (who won what, at what price), reachable
+    with include_awarded=true or the explicit AWARDED scope, which asks for
+    exactly these and must not be filtered to nothing.
+    """
+    if include_awarded or opportunity_scope == "AWARDED":
+        return query
+    return query.filter(Tender.bid_notice_status != "AWARDED")
+
+
 def apply_recency_window(query, max_age_days: Optional[int] = DEFAULT_MAX_AGE_DAYS):
     """Keep only notices announced within the window, newest usable first.
 
@@ -66,6 +79,7 @@ def get_tenders(
     opportunity_scope: Optional[str] = None,
     include_quarantined: bool = False,
     max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
+    include_awarded: bool = False,
     sort_by: Optional[str] = "newest",
     limit: int = Query(1000, ge=1, le=5000),
     offset: int = Query(0, ge=0),
@@ -73,6 +87,7 @@ def get_tenders(
 ):
     query = apply_trust_scope(db.query(Tender), include_quarantined)
     query = apply_recency_window(query, max_age_days)
+    query = exclude_awarded(query, include_awarded, opportunity_scope)
 
     if q:
         search_pattern = f"%{q}%"
@@ -170,10 +185,12 @@ def export_tenders_csv(
     opportunity_scope: Optional[str] = None,
     include_quarantined: bool = False,
     max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
+    include_awarded: bool = False,
     db: Session = Depends(get_db)
 ):
     query = apply_trust_scope(db.query(Tender), include_quarantined)
     query = apply_recency_window(query, max_age_days)
+    query = exclude_awarded(query, include_awarded, opportunity_scope)
     if q:
         search = f"%{q}%"
         query = query.filter(or_(Tender.title.ilike(search), Tender.description.ilike(search), Tender.agency.ilike(search), Tender.tender_code.ilike(search), Tender.sub_categories.ilike(search)))

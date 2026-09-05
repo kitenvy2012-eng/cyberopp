@@ -58,6 +58,7 @@ _AUTO_DISABLED_STATUSES = {
     "DISABLED_UNVERIFIED",
     "DISABLED_BLOCKED_BY_SOURCE",
     "DISABLED_JS_RENDERED",
+    "DISABLED_NO_PUBLIC_BOARD",
 }
 _CURATED_GENERIC_SOURCE_NAMES = {
     item["name"] for item in DEFAULT_SOURCES if item["source_type"] != "EGP"
@@ -238,6 +239,46 @@ def seed_database_if_empty(db: Session) -> None:
 def is_scan_running() -> bool:
     """Whether a scan holds the lock right now, in this process."""
     return _SCAN_LOCK.locked()
+
+
+def mark_awarded_from_stored_evidence(db: Session) -> int:
+    """Flag records whose retained evidence already names a contract winner.
+
+    The e-GP detail payload is kept per record, so this reads what was already
+    fetched rather than asking the source again. A project with a signed
+    contract is not an opportunity, and leaving it in the list is what makes the
+    dashboard look full of work that was decided months ago.
+    """
+    candidates = (
+        db.query(Tender)
+        .filter(
+            Tender.raw_payload_json.isnot(None),
+            Tender.raw_payload_json.like('%"project_detail"%'),
+            Tender.bid_notice_status != "AWARDED",
+        )
+        .all()
+    )
+    changed = 0
+    for tender in candidates:
+        try:
+            payload = json.loads(tender.raw_payload_json or "{}")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        contracts = (payload.get("project_detail") or {}).get("contract")
+        if not isinstance(contracts, list):
+            continue
+        has_winner = any(
+            isinstance(contract, dict)
+            and isinstance(contract.get("winner"), dict)
+            and _clean(contract["winner"].get("name"))
+            for contract in contracts
+        )
+        if has_winner:
+            tender.bid_notice_status = "AWARDED"
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
 
 
 def reconcile_interrupted_scans(db: Session) -> int:

@@ -205,14 +205,21 @@ DEFAULT_SOURCES = [
         "name": "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน) (SCG) — จัดซื้อจัดจ้าง",
         "source_type": "CORPORATE",
         "url": "https://www.scg.com/th/procurement/",
-        "is_active": True,
+        # The path 302s to https://www.scg.com/ — the page does not exist, so an
+        # enabled source would re-scrape the SCG homepage on every cycle and
+        # report success while collecting nothing. SCG also names ClaudeBot,
+        # GPTBot and CCBot under `Disallow: /` in its robots.txt.
+        # `backend/discover_procurement_pages.py` found no procurement board on
+        # any of the 24 private companies it probed.
+        "is_active": False,
+        "last_status": "DISABLED_NO_PUBLIC_BOARD",
         "config_json": json.dumps({
             "agency_name": "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน)",
             "agency_type": "บริษัทเอกชนชั้นนำ",
-            "max_pages": 5,
-            "discover_sitemaps": False,
-            "request_delay_seconds": 0.4,
-            "verified_note": "หน้าจัดซื้อจัดจ้างทางการของเครือ SCG สำหรับคู่ค้าและผู้สนใจเสนองาน",
+            "disabled_reason": (
+                "scg.com/th/procurement/ redirect ไปหน้าแรก ไม่มีหน้าประกาศจัดซื้อสาธารณะ "
+                "ช่องทางจริงของ SCG คือลงทะเบียนคู่ค้า แล้วรับ RFP ทางอีเมล"
+            ),
         }, ensure_ascii=False),
     },
 ]

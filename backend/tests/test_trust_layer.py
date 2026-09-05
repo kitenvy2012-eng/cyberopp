@@ -198,6 +198,69 @@ class TrustLayerTests(unittest.TestCase):
         listed = len(self.client.get("/api/tenders").json())
         self.assertEqual(listed, self.client.get("/api/stats").json()["total_tenders"])
 
+    def test_projects_with_a_named_winner_are_not_offered_as_opportunities(self):
+        with self.Session() as session:
+            live = _tender("LIVE-001", "Still open", verified=True)
+            decided = _tender("DONE-001", "Winner already chosen", verified=True)
+            decided.bid_notice_status = "AWARDED"
+            session.add_all([live, decided])
+            session.commit()
+
+        codes = [i["tender_code"] for i in self.client.get("/api/tenders").json()]
+        self.assertIn("LIVE-001", codes)
+        self.assertNotIn("DONE-001", codes)
+
+        # Still reachable as market intelligence, both ways.
+        with_awarded = [
+            i["tender_code"]
+            for i in self.client.get("/api/tenders?include_awarded=true").json()
+        ]
+        self.assertIn("DONE-001", with_awarded)
+
+        awarded_only = [
+            i["tender_code"]
+            for i in self.client.get("/api/tenders?opportunity_scope=AWARDED").json()
+        ]
+        self.assertIn("DONE-001", awarded_only)
+
+        # And the headline count follows the same rule as the list.
+        self.assertEqual(
+            len(self.client.get("/api/tenders").json()),
+            self.client.get("/api/stats").json()["total_tenders"],
+        )
+
+    def test_awarded_flag_is_derived_from_retained_contract_evidence(self):
+        import json as _json
+        from backend.app.scrapers.manager import mark_awarded_from_stored_evidence
+
+        with self.Session() as session:
+            decided = _tender("EVID-001", "Has a contract winner in evidence", verified=True)
+            decided.raw_payload_json = _json.dumps({
+                "search_row": {"project_id": "1"},
+                "project_detail": {
+                    "contract": [{"winner": {"name": "บริษัท ผู้ชนะ จำกัด"}}]
+                },
+            }, ensure_ascii=False)
+            still_open = _tender("EVID-002", "Detail carries no contract", verified=True)
+            still_open.raw_payload_json = _json.dumps({
+                "search_row": {"project_id": "2"},
+                "project_detail": {"contract": []},
+            }, ensure_ascii=False)
+            session.add_all([decided, still_open])
+            session.commit()
+
+            changed = mark_awarded_from_stored_evidence(session)
+            self.assertEqual(1, changed)
+            session.expire_all()
+            self.assertEqual(
+                "AWARDED",
+                session.query(Tender).filter(Tender.tender_code == "EVID-001").one().bid_notice_status,
+            )
+            self.assertNotEqual(
+                "AWARDED",
+                session.query(Tender).filter(Tender.tender_code == "EVID-002").one().bid_notice_status,
+            )
+
     def test_documents_are_never_generated_for_hidden_records(self):
         with self.Session() as session:
             visible_id = (
