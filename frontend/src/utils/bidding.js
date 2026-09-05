@@ -75,3 +75,19 @@ export function formatThaiDateTime(value) {
     timeZone: 'Asia/Bangkok',
   });
 }
+
+export function formatRelativeDate(value) {
+  if (!value) return null;
+  const target = new Date(value);
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  const diffTime = now.getTime() - target.getTime();
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 'เร็วๆ นี้';
+  if (diffDays === 0) return 'ประกาศวันนี้';
+  if (diffDays === 1) return 'ประกาศเมื่อวาน';
+  if (diffDays < 7) return `ประกาศเมื่อ ${diffDays} วันก่อน`;
+  if (diffDays < 30) return `ประกาศเมื่อ ${Math.floor(diffDays / 7)} สัปดาห์ก่อน`;
+  if (diffDays < 365) return `ประกาศเมื่อ ${Math.floor(diffDays / 30)} เดือนก่อน`;
+  return `${Math.floor(diffDays / 365)} ปีที่แล้ว`;
+}

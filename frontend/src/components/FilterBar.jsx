@@ -58,12 +58,33 @@ export default function FilterBar({ filters, setFilters, onReset }) {
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <select
               aria-label="ขอบเขตประกาศ"
-              value={filters.open_for_bidding === false ? 'ALL' : 'ACTIONABLE'}
-              onChange={(e) => handleChange('open_for_bidding', e.target.value === 'ACTIONABLE')}
+              value={
+                filters.open_for_bidding
+                  ? 'ACTIONABLE'
+                  : filters.opportunity_scope === 'ACTIVE_ONLY'
+                  ? 'ACTIVE_ONLY'
+                  : filters.opportunity_scope === 'AWARDED'
+                  ? 'AWARDED'
+                  : 'ALL'
+              }
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'ACTIONABLE') {
+                  setFilters((prev) => ({ ...prev, open_for_bidding: true, opportunity_scope: '' }));
+                } else if (val === 'ACTIVE_ONLY') {
+                  setFilters((prev) => ({ ...prev, open_for_bidding: false, opportunity_scope: 'ACTIVE_ONLY' }));
+                } else if (val === 'AWARDED') {
+                  setFilters((prev) => ({ ...prev, open_for_bidding: false, opportunity_scope: 'AWARDED' }));
+                } else {
+                  setFilters((prev) => ({ ...prev, open_for_bidding: false, opportunity_scope: 'ALL' }));
+                }
+              }}
               className="bg-transparent text-emerald-200 text-xs focus:outline-none cursor-pointer"
             >
-              <option value="ALL" className="bg-slate-900">ประกาศใหม่ล่าสุด (ไม่เกิน 1 ปี)</option>
-              <option value="ACTIONABLE" className="bg-slate-900">เฉพาะที่ยังมีเวลายื่นข้อเสนอ</option>
+              <option value="ACTIVE_ONLY" className="bg-slate-900">🎯 โอกาสใหม่ที่ยังยื่นข้อเสนอได้</option>
+              <option value="ACTIONABLE" className="bg-slate-900">⏱️ เฉพาะที่ยืนยันวันยื่นข้อเสนอแล้ว</option>
+              <option value="AWARDED" className="bg-slate-900">🏆 โครงการที่มีผู้ชนะแล้ว (สัญญาแล้ว)</option>
+              <option value="ALL" className="bg-slate-900">📁 ประกาศทั้งหมด (ไม่เกิน 1 ปี)</option>
             </select>
           </div>
 

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Bookmark, Calendar, Building2, Landmark, Building, ChevronRight, AlertCircle, Shield, BadgeCheck, CircleDashed, ExternalLink } from 'lucide-react';
-import { formatThaiDateTime, getBiddingStateConfig, normalizeBiddingState } from '../utils/bidding';
+import { Bookmark, Calendar, Building2, Landmark, Building, ChevronRight, AlertCircle, Shield, BadgeCheck, CircleDashed, ExternalLink, Award, FileText } from 'lucide-react';
+import { formatThaiDate, formatThaiDateTime, formatRelativeDate, getBiddingStateConfig, normalizeBiddingState } from '../utils/bidding';
 
 const CATEGORY_STYLES = {
   "VA_PENTEST": {
@@ -47,7 +47,7 @@ const AGENCY_TYPE_CONFIG = {
     prefix: "🏦 "
   },
   "บริษัทเอกชนชั้นนำ": {
-    badge: "bg-indigo-500/10 text-indigo-300 border-indigo-500/30",
+    badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/40",
     icon: Building,
     prefix: "🏢 "
   },
@@ -81,6 +81,12 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
   const bidding = getBiddingStateConfig(biddingState);
   const bidStart = formatThaiDateTime(tender.bid_start_date);
   const bidDeadline = formatThaiDateTime(tender.bid_deadline_at);
+  const announceDate = formatThaiDate(tender.announcement_date);
+  const announceRelative = formatRelativeDate(tender.announcement_date);
+
+  const isAwarded = tender.bid_notice_status === 'AWARDED' || tender.status === 'CLOSED';
+  const isDraft = tender.bid_notice_status === 'DRAFT';
+  const isInvitation = tender.bid_notice_status === 'INVITATION';
 
   const formatPrice = (val) => {
     if (!val || val === 0) return 'ไม่ระบุงบประมาณ';
@@ -90,8 +96,8 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
   const subTags = tender.sub_categories ? tender.sub_categories.split(',').map(s => s.trim()) : [];
 
   return (
-    <div className="group rounded-2xl bg-[#131B2B]/90 border border-slate-800 hover:border-cyan-500/40 p-4 sm:p-5 transition-all shadow-md hover:shadow-cyan-500/5 flex flex-col justify-between relative overflow-hidden">
-      {/* Top row: Category, Sector badge, Urgency badge, Bookmark */}
+    <div className={`group rounded-2xl bg-[#131B2B]/90 border ${isAwarded ? 'border-slate-800/80 opacity-80' : 'border-slate-800 hover:border-cyan-500/40'} p-4 sm:p-5 transition-all shadow-md hover:shadow-cyan-500/5 flex flex-col justify-between relative overflow-hidden`}>
+      {/* Top row: Badges, Status, Bookmark */}
       <div>
         <div className="flex items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -101,6 +107,27 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
                 snapshot อาจล้าสมัย
               </span>
             )}
+
+            {/* Opportunity Status Badges */}
+            {isAwarded && (
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                <Award className="w-3 h-3 text-purple-400" />
+                มีผู้ชนะแล้ว (สัญญาแล้ว)
+              </span>
+            )}
+            {isInvitation && (
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                เปิดรับข้อเสนออยู่
+              </span>
+            )}
+            {isDraft && (
+              <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-500/15 text-blue-300 border border-blue-500/30 flex items-center gap-1">
+                <FileText className="w-3 h-3 text-blue-400" />
+                ร่างประกาศ / รับฟังวิจารณ์
+              </span>
+            )}
+
             {tender.verification_status === 'VERIFIED' ? (
               <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                 <BadgeCheck className="w-3 h-3" />
@@ -151,10 +178,26 @@ export default function TenderCard({ tender, onSelect, onToggleBookmark, onUpdat
           </button>
         </div>
 
+        {/* Announcement Date Bar (Latest Date) */}
+        {announceDate && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs text-cyan-300/90 font-medium">
+            <span className="flex items-center gap-1 text-slate-400">
+              <Calendar className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+              <span>วันที่ประกาศลงระบบ:</span>
+            </span>
+            <span className="text-slate-100 font-semibold">{announceDate}</span>
+            {announceRelative && (
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/20 text-cyan-200 border border-cyan-500/30">
+                {announceRelative}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Project Title */}
         <h3
           onClick={() => onSelect(tender)}
-          className="mt-3 text-base font-semibold text-white group-hover:text-cyan-300 transition-colors cursor-pointer line-clamp-2 leading-snug"
+          className="mt-2.5 text-base font-semibold text-white group-hover:text-cyan-300 transition-colors cursor-pointer line-clamp-2 leading-snug"
         >
           {tender.title}
         </h3>

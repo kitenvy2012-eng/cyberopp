@@ -32,6 +32,7 @@ export default function App() {
     status: 'ALL',
     verification_status: 'ALL',
     open_for_bidding: false,
+    opportunity_scope: 'ACTIVE_ONLY',
     min_budget: '',
     max_budget: '',
     sort_by: 'newest'
@@ -168,6 +169,7 @@ export default function App() {
       status: 'ALL',
       verification_status: 'ALL',
       open_for_bidding: false,
+      opportunity_scope: 'ACTIVE_ONLY',
       min_budget: '',
       max_budget: '',
       sort_by: 'newest'
@@ -219,8 +221,8 @@ export default function App() {
           <div className="flex items-start gap-2 text-emerald-200">
             <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
             <div>
-              <span className="font-semibold">โหมดข้อมูลจริง</span>
-              <span className="text-emerald-300/75"> — แสดงเฉพาะประกาศที่ต้นทางลงวันที่ไว้และอายุไม่เกิน 1 ปี เรียงจากใหม่ไปเก่า การพบระเบียนจัดซื้อไม่ได้แปลว่ายังเปิดรับข้อเสนอ</span>
+              <span className="font-semibold">โหมดโอกาสยื่นข้อเสนอ</span>
+              <span className="text-emerald-300/75"> — คัดกรองเฉพาะประกาศใหม่และยังไม่สิ้นสุดโครงการ เรียงตามวันที่ประกาศลงระบบล่าสุด</span>
             </div>
           </div>
           {(stats?.unconfirmed_deadline_tenders > 0 || stats?.pending_tenders > 0) && (
@@ -255,7 +257,11 @@ export default function App() {
               <div>
                 {filters.open_for_bidding
                   ? 'พบโอกาสที่ยังมีเวลายื่นข้อเสนอ '
-                  : 'ประกาศใหม่ล่าสุด (ไม่เกิน 1 ปี) '}
+                  : filters.opportunity_scope === 'ACTIVE_ONLY'
+                  ? 'พบโอกาสใหม่ที่ยังยื่นข้อเสนอได้ '
+                  : filters.opportunity_scope === 'AWARDED'
+                  ? 'โครงการที่มีผู้ชนะแล้ว/สัญญาแล้ว '
+                  : 'ประกาศทั้งหมด '}
                 <span className="font-semibold text-cyan-400">{tenders.length}</span> โครงการ
                 {filters.category !== 'ALL' && <span> ในหมวด <span className="text-white">{filters.category}</span></span>}
               </div>

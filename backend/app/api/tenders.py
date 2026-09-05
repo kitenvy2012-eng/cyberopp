@@ -63,6 +63,7 @@ def get_tenders(
     verified_only: bool = False,
     official_only: bool = False,
     open_for_bidding: bool = False,
+    opportunity_scope: Optional[str] = None,
     include_quarantined: bool = False,
     max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
     sort_by: Optional[str] = "newest",
@@ -118,6 +119,19 @@ def get_tenders(
     if max_budget is not None and max_budget > 0:
         query = query.filter(Tender.budget <= max_budget)
 
+    if opportunity_scope == "ACTIVE_ONLY":
+        query = query.filter(
+            Tender.bid_notice_status.notin_(["AWARDED", "CANCELLED"]),
+            Tender.status != "CLOSED",
+        )
+    elif opportunity_scope == "AWARDED":
+        query = query.filter(
+            or_(
+                Tender.bid_notice_status == "AWARDED",
+                Tender.status == "CLOSED",
+            )
+        )
+
     # Sorting
     if sort_by == "deadline":
         query = query.order_by(asc(Tender.bid_deadline_at if open_for_bidding else Tender.submission_deadline).nullslast(), Tender.id)
@@ -126,7 +140,7 @@ def get_tenders(
     elif sort_by == "budget_asc":
         query = query.order_by(asc(Tender.budget))
     else: # newest
-        query = query.order_by(desc(Tender.announcement_date), desc(Tender.id))
+        query = query.order_by(desc(Tender.announcement_date).nullslast(), desc(Tender.id))
 
     if open_for_bidding:
         # Filter before pagination. A stored project status cannot establish
@@ -153,6 +167,7 @@ def export_tenders_csv(
     is_bookmarked: Optional[bool] = None,
     sort_by: Optional[str] = "newest",
     open_for_bidding: bool = False,
+    opportunity_scope: Optional[str] = None,
     include_quarantined: bool = False,
     max_age_days: int = Query(DEFAULT_MAX_AGE_DAYS, ge=0, le=36500),
     db: Session = Depends(get_db)
@@ -184,6 +199,18 @@ def export_tenders_csv(
         query = query.filter(Tender.pipeline_stage == pipeline_stage)
     if is_bookmarked is not None:
         query = query.filter(Tender.is_bookmarked == is_bookmarked)
+    if opportunity_scope == "ACTIVE_ONLY":
+        query = query.filter(
+            Tender.bid_notice_status.notin_(["AWARDED", "CANCELLED"]),
+            Tender.status != "CLOSED",
+        )
+    elif opportunity_scope == "AWARDED":
+        query = query.filter(
+            or_(
+                Tender.bid_notice_status == "AWARDED",
+                Tender.status == "CLOSED",
+            )
+        )
     if sort_by == "deadline":
         query = query.order_by(asc(Tender.bid_deadline_at if open_for_bidding else Tender.submission_deadline).nullslast(), Tender.id)
     elif sort_by == "budget_desc":
@@ -191,7 +218,7 @@ def export_tenders_csv(
     elif sort_by == "budget_asc":
         query = query.order_by(asc(Tender.budget))
     else:
-        query = query.order_by(desc(Tender.announcement_date), desc(Tender.id))
+        query = query.order_by(desc(Tender.announcement_date).nullslast(), desc(Tender.id))
     tenders = query.all()
     if open_for_bidding:
         tenders = [item for item in tenders if is_actionable(item)]

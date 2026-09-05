@@ -201,6 +201,20 @@ DEFAULT_SOURCES = [
             ),
         }, ensure_ascii=False),
     },
+    {
+        "name": "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน) (SCG) — จัดซื้อจัดจ้าง",
+        "source_type": "CORPORATE",
+        "url": "https://www.scg.com/th/procurement/",
+        "is_active": True,
+        "config_json": json.dumps({
+            "agency_name": "บริษัท ปูนซิเมนต์ไทย จำกัด (มหาชน)",
+            "agency_type": "บริษัทเอกชนชั้นนำ",
+            "max_pages": 5,
+            "discover_sitemaps": False,
+            "request_delay_seconds": 0.4,
+            "verified_note": "หน้าจัดซื้อจัดจ้างทางการของเครือ SCG สำหรับคู่ค้าและผู้สนใจเสนองาน",
+        }, ensure_ascii=False),
+    },
 ]
 
 DEFAULT_CHANNELS = [

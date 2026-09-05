@@ -607,7 +607,7 @@ class CustomWebScraper(BaseScraper):
             "tender_code": stable_tender_id(identity),
             "title": payload["title"][:500],
             "agency": payload["agency"][:255],
-            "agency_type": None,
+            "agency_type": self.config.get("agency_type") or None,
             "description": payload["description"],
             "budget": budget,
             "median_price": median_price,
@@ -642,6 +642,8 @@ class CustomWebScraper(BaseScraper):
         return item
 
     def _matches_keywords(self, text: str) -> bool:
+        if _as_bool(self.config.get("preview_mode"), default=False):
+            return True
         normalized = self.clean_text(text).casefold()
         cyber_match = is_cyber_relevant(normalized) or any(
             pattern.search(normalized) for pattern in self._extra_keyword_patterns

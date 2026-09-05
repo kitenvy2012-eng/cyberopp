@@ -17,6 +17,7 @@ const TENDER_FILTER_KEYS = new Set([
   'verified_only',
   'official_only',
   'open_for_bidding',
+  'opportunity_scope',
   'include_quarantined',
   'sort_by',
   'limit',
@@ -114,6 +115,19 @@ export async function createSource(data) {
 export async function deleteSource(id) {
   const res = await fetch(`${API_BASE}/sources/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete source');
+  return res.json();
+}
+
+export async function testSource(data) {
+  const res = await fetch(`${API_BASE}/sources/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'ทดสอบดึงข้อมูลไม่สำเร็จ');
+  }
   return res.json();
 }
 

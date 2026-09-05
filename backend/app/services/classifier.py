@@ -173,8 +173,18 @@ CORPORATE_AGENCIES = [
     "บริษัท ปูนซิเมนต์ไทย", "เครือเจริญโภคภัณฑ์", "ทรู คอร์ปอเรชั่น",
     "แอดวานซ์ อินโฟร์", "เซ็นทรัลพัฒนา", "กรุงเทพดุสิตเวชการ",
     "ไทยเบฟเวอเรจ", "ไมเนอร์ อินเตอร์เนชั่นแนล", "บางจาก คอร์ปอเรชั่น",
-    "อินทัช โฮลดิ้งส์", "กัลฟ์ เอ็นเนอร์จี",
-    "scg", "cp all", "true corporation", "ais", "bdms", "thaibev",
+    "อินทัช โฮลดิ้งส์", "กัลฟ์ เอ็นเนอร์จี", "ปตท. น้ำมันและการค้าปลีก",
+    "บิทคับ", "ดับบลิวเอชเอ", "โรงพยาบาลบำรุงราษฎร์", "โอสถสภา",
+    "คาราบาวกรุ๊ป", "บีทีเอส กรุ๊ป", "ทางด่วนและรถไฟฟ้ากรุงเทพ",
+    "พันธวณิช", "ซิโน-ไทย",
+    "scg", "cp all", "cpf", "true corporation", "ais", "bdms", "thaibev",
+    "bcp", "gulf", "bitkub", "wha", "minor", "pttor", "pantavanij",
+    "bts", "bem", "osp", "cbg", "bh",
+]
+
+CORPORATE_MARKERS = [
+    "บริษัท", "จำกัด", "บมจ.", "corp", "corporation", "co., ltd.",
+    "inc.", "enterprise", "holding", "holdings", "group", "ventures",
 ]
 
 GOVERNMENT_AGENCIES = [
@@ -205,9 +215,11 @@ def detect_agency_type(agency: str) -> str:
         return "รัฐวิสาหกิจ"
     if _agency_matches(FINANCIAL_AGENCIES, name):
         return "สถาบันการเงิน"
+    if _agency_matches(CORPORATE_AGENCIES, name):
+        return "บริษัทเอกชนชั้นนำ"
     if _agency_matches(GOVERNMENT_AGENCIES, name):
         return "ส่วนราชการ"
-    if _agency_matches(CORPORATE_AGENCIES, name):
+    if _agency_matches(CORPORATE_MARKERS, name):
         return "บริษัทเอกชนชั้นนำ"
     # e-GP records are government procurement by definition. An unrecognised
     # agency name must not be promoted to a private "leading company" label.

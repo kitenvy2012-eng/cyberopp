@@ -108,6 +108,35 @@ class ScraperSourceResponse(ScraperSourceBase):
     class Config:
         from_attributes = True
 
+
+class SourceTestRequest(BaseModel):
+    url: str
+    name: Optional[str] = None
+    config_json: Optional[str] = None
+    item_selector: Optional[str] = None
+    agency_type: Optional[str] = None
+
+
+class SourceTestSampleItem(BaseModel):
+    title: str
+    agency: Optional[str] = None
+    agency_type: Optional[str] = None
+    announcement_date: Optional[str] = None
+    submission_deadline: Optional[str] = None
+    budget: Optional[float] = None
+    tor_url: Optional[str] = None
+    source_url: Optional[str] = None
+    is_cyber_relevant: bool = True
+
+
+class SourceTestResponse(BaseModel):
+    status: str
+    pages_fetched: int = 0
+    total_items_found: int = 0
+    sample_items: List[SourceTestSampleItem] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+    suggested_agency_type: Optional[str] = None
+
 class NotificationChannelBase(BaseModel):
     name: str
     channel_type: str # LINE_NOTIFY, DISCORD, TELEGRAM, WEBHOOK, IN_APP
